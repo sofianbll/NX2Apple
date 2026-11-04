@@ -1,0 +1,322 @@
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index 909975a293..3cb76bde94 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -184,6 +184,7 @@ static int merge_pads_left(GCController *gone) {
+ }
+ // Called at start and on every connect / disconnect (gone: the controller that was just removed, nil on a connect)
+ static void pads_changed(GCController *gone) {
++    hidpad_settle();   // a pad read as raw HID that GameController lists now goes back to it (pad_hid_mac.h)
+     if (g_merge) {
+         int any = 0;
+         for (GCController *c in GCController.controllers) if (c.extendedGamepad && c != gone) {
+@@ -260,6 +261,7 @@ static void hidpad_attach(hid_pad *d) {
+     int p = g_merge ? 0 : pad_slot_take(&g_slots, d, d->name); char nb[16];
+     if (p < 0) { LOG("controller '%s' (HID) connected: all %d players are taken, not used", d->name, DM_PLAYERS); return; }
+     npad_name(p, nb, sizeof nb); LOG("controller '%s' (HID) connected: player %d (npad %s)", d->name, p + 1, nb);
++    hidpad_show_player(d, p);
+     if (!g_merge) dm_pad_players(pad_slot_mask(&g_slots));   // merged, every controller is player 1, as pads_changed has it
+     hidpad_read(d);
+ }
+diff --git a/dm/host/pad_hid.h b/dm/host/pad_hid.h
+index 542b5671dc..876efbe0bf 100644
+--- a/dm/host/pad_hid.h
++++ b/dm/host/pad_hid.h
+@@ -1,8 +1,10 @@
+ // Raw HID gamepads that GameController does not list (an 8BitDo in its own mode: a Bluetooth HID gamepad macOS pairs, GitHub issue #637): one device's buttons, hat and axes
+ // as HID reports them, turned into Switch buttons and sticks. Pure, so tests/t_pad_hid.c checks it without a controller; pad_hid_mac.h reads the devices.
+ // Buttons by position, as front_mac.m maps GameController (right A, bottom B, top X, left Y). The default map is 8BitDo's D-input numbering (HID button usages 1 A, 2 B, 4 X,
+-// 5 Y, 7 / 8 LB / RB, 9 / 10 LT / RT, 11 select, 12 start, 14 / 15 stick clicks, by Xbox labels); DM_HID_MAP=A=2,B=1,… replaces entries, DM_HID_LOG=1 logs each usage pressed.
++// 5 Y, 7 / 8 LB / RB, 9 / 10 LT / RT, 11 select, 12 start, 14 / 15 stick clicks, by Xbox labels); a device whose buttons come in Nintendo's report 0x3F (Pro Controller clones,
++// whatever their vendor) has that report's numbering instead. DM_HID_MAP=A=2,B=1,… replaces entries, DM_HID_LOG=1 logs each usage pressed.
+ // Sticks: X / Y left, Z / Rz right (Rx / Ry on a device without Z); analog triggers (Brake / Accelerator) press ZL / ZR past half.
++// Report 0x3F carries the sticks raw, off centre and short of the axis's range: pad_hid_raw_axis measures them from their rest, against the reach seen so far.
+ #pragma once
+ #include <math.h>
+ #include <stdint.h>
+@@ -12,6 +14,9 @@
+ #include "dm_input.h"
+ 
+ #define PAD_HID_DEFAULT_VENDOR 0x2DC8   // 8BitDo, whose numbering the default map is (another vendor's pad gets a log line saying so, pad_hid_mac.h)
++#define PAD_HID_NINTENDO_REPORT 0x3F    // the Pro Controller's simple input report: 16 buttons, a hat, four 16-bit axes
++#define PAD_HID_MAX 32                  // pads pad_hid_unlisted compares at a time
++#define PAD_HID_RAW_REACH 0.7f          // a raw stick's reach from its rest until it has gone further (the PowerA NANO's reaches 0.75 to 0.81 of the axis)
+ enum { PH_X, PH_Y, PH_Z, PH_RX, PH_RY, PH_RZ, PH_BRAKE, PH_ACCEL, PH_AXES };
+ typedef struct {
+     uint32_t buttons;          // bit u - 1: HID button usage u held (usages 1..32)
+@@ -19,14 +24,17 @@ typedef struct {
+     float axis[PH_AXES];       // -1..1 (a trigger rests at -1)
+     uint8_t has[PH_AXES];      // the device has the axis
+     uint8_t map[16];           // Switch button bit (dm_input.h order) -> HID button usage, 0 none
++    uint8_t raw;               // sticks go through pad_hid_raw_axis
++    uint8_t rest_seen[PH_AXES];
++    float rest[PH_AXES], reach[PH_AXES][2];   // an axis's rest, and its reach below and above it
+ } pad_hid;
+ 
+ static const char *const pad_hid_names[16] = {"A", "B", "X", "Y", "LS", "RS", "L", "R", "ZL", "ZR", "PLUS", "MINUS", "LEFT", "UP", "RIGHT", "DOWN"};
+ 
+-// DM_HID_MAP: comma-separated NAME=usage entries over the default map (an unknown name or a usage past 32 is skipped)
+-static void pad_hid_init(pad_hid *h, const char *map) {
+-    static const uint8_t def[16] = {2, 1, 5, 4, 14, 15, 7, 8, 9, 10, 12, 11};
+-    memset(h, 0, sizeof *h); h->hat = -1; memcpy(h->map, def, sizeof def);
++// DM_HID_MAP: comma-separated NAME=usage entries over the default map (an unknown name or a usage past 32 is skipped); nintendo: report 0x3F's numbering is that default
++static void pad_hid_init(pad_hid *h, const char *map, int nintendo) {
++    static const uint8_t def[16] = {2, 1, 5, 4, 14, 15, 7, 8, 9, 10, 12, 11}, nin[16] = {2, 1, 4, 3, 11, 12, 5, 6, 7, 8, 10, 9};
++    memset(h, 0, sizeof *h); h->hat = -1; h->raw = (uint8_t)!!nintendo; memcpy(h->map, nintendo ? nin : def, sizeof def);
+     for (int a = 0; a < PH_AXES; a++) h->axis[a] = a >= PH_BRAKE ? -1 : 0;
+     for (const char *s = map; s && *s; s = strchr(s, ',') ? strchr(s, ',') + 1 : "") {
+         const char *eq = strchr(s, '='), *end = strchr(s, ','); if (!eq || (end && eq > end)) continue;
+@@ -34,6 +42,23 @@ static void pad_hid_init(pad_hid *h, const char *map) {
+         for (int b = 0; b < 16; b++) if ((size_t)(eq - s) == strlen(pad_hid_names[b]) && !strncasecmp(s, pad_hid_names[b], eq - s) && u >= 0 && u <= 32) h->map[b] = (uint8_t)u;
+     }
+ }
++// Of n pads +[GCController supportsHIDDevice:] said yes to, which does GameController not list (out[i] = 1: only raw HID reads pad i)? A pad is covered by a listed controller of its
++// name; GameController may name a controller differently from its HID product, so a listed controller no name matched covers one pad too. Up to PAD_HID_MAX pads and controllers.
++static void pad_hid_unlisted(const char *const *pad, int n, const char *const *listed, int m, uint8_t *out) {
++    uint32_t used = 0; int spare = m;
++    for (int i = 0; i < n; i++) {
++        out[i] = 1;
++        for (int j = 0; out[i] && j < m; j++) if (!(used >> j & 1) && !strcmp(pad[i], listed[j])) { used |= 1u << j; out[i] = 0; spare--; }
++    }
++    for (int i = 0; spare > 0 && i < n; i++) if (out[i]) { out[i] = 0; spare--; }
++}
++// The report that shows player p on a Pro Controller's four lights, which a pad runs in a chase until the console gives it a player: subcommand 0x30 of output report 0x01, after neutral
++// rumble data, with the console's pattern for each player. It leaves the pad in its current input report.
++#define PAD_HID_LIGHTS_SIZE 49
++static void pad_hid_lights(uint8_t r[PAD_HID_LIGHTS_SIZE], int p) {
++    static const uint8_t neutral[8] = {0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40}, lights[8] = {0x1, 0x3, 0x7, 0xF, 0x9, 0x5, 0xD, 0x6};
++    memset(r, 0, PAD_HID_LIGHTS_SIZE); r[0] = 0x01; memcpy(r + 2, neutral, sizeof neutral); r[10] = 0x30; r[11] = lights[p & 7];
++}
+ static int pad_hid_axis_of(uint32_t page, uint32_t usage) {   // -1: not a gamepad axis
+     if (page == 1 && usage >= 0x30 && usage <= 0x35) return PH_X + (int)(usage - 0x30);
+     if (page == 2 && usage == 0xC5) return PH_BRAKE;
+@@ -41,6 +66,16 @@ static int pad_hid_axis_of(uint32_t page, uint32_t usage) {   // -1: not a gamep
+     return -1;
+ }
+ static float pad_hid_norm(long v, long min, long max) { return max > min ? (float)(2.0 * (v - min) / (max - min) - 1) : 0; }
++// A raw axis (-1..1) measured from its rest, a full deflection reaching 1. The first value is the rest, unless it is too far out to be one (a stick held while the pad connects: the axis's
++// middle stands in). The reach only grows, each side on its own.
++static float pad_hid_raw_axis(pad_hid *h, int a, float v) {
++    if (!h->rest_seen[a]) {
++        h->rest_seen[a] = 1; h->rest[a] = fabsf(v) < 0.25f ? v : 0; h->reach[a][0] = h->reach[a][1] = PAD_HID_RAW_REACH;
++    }
++    float d = v - h->rest[a]; int side = d > 0;
++    if (fabsf(d) > h->reach[a][side]) h->reach[a][side] = fabsf(d);
++    return d / h->reach[a][side];
++}
+ static int pad_hid_hat(long v, long min, long max) { return v >= min && v <= max && v - min < 8 ? (int)(v - min) : -1; }   // past the 8 directions: centered
+ // One stick: a round dead zone against drift (PAD_HID_DEAD of full deflection), and past it the deflection scaled back to start at 0, so the stick neither jumps to the dead zone's
+ // edge nor loses a small x while y is deflected. Each axis is clamped after the scale: a square-gated stick still reaches full x and y in its corners.
+diff --git a/dm/host/pad_hid_mac.h b/dm/host/pad_hid_mac.h
+index b3b3212e8a..5c5106bc26 100644
+--- a/dm/host/pad_hid_mac.h
++++ b/dm/host/pad_hid_mac.h
+@@ -1,7 +1,9 @@
+ // Mac: raw HID gamepads that GameController does not list (pad_hid.h, GitHub issue #637), read on the main run loop alongside front_mac.m's GameController players.
+ // Each device takes a player slot as a GameController controller does; front_mac.m defines the slot side (hidpad_attach / hidpad_detach / hidpad_read).
+-// Skipped, so no controller is read twice: GameController's synthetic devices, and every device GameController says it will list itself (+[GCController supportsHIDDevice:]:
+-// Xbox, PlayStation, Switch and MFi pads of any vendor). DM_HID_PADS=0 turns this off.
++// Skipped, so no controller is read twice: GameController's synthetic devices and the devices GameController lists. +[GCController supportsHIDDevice:] does not settle the second:
++// macOS gives any HID gamepad with a pad's elements its fallback "Standard MFi Controller" personality, and the call then says yes for a pad gamecontrollerd never lists (a PowerA
++// NANO, "Lic Pro Controller", vendor and product 0). So a device it says yes to waits HIDPAD_GC_WAIT seconds for its GCController (hidpad_settle, pad_hid_unlisted); with none
++// it is read here, and one GameController lists later goes back to it. DM_HID_PADS=0 turns this off.
+ #pragma once
+ #import <IOKit/hid/IOHIDManager.h>
+ #import <GameController/GameController.h>
+@@ -10,9 +12,10 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
+-typedef struct hid_pad { IOHIDDeviceRef hid; pad_hid st; char name[64]; struct hid_pad *next; } hid_pad;
++#define HIDPAD_GC_WAIT 3.0
++typedef struct hid_pad { IOHIDDeviceRef hid; pad_hid st; char name[64]; double due; uint8_t gc, used, nintendo; struct hid_pad *next; } hid_pad;   // gc: supportsHIDDevice said yes; used: read here; nintendo: buttons in report 0x3F
+ static IOHIDManagerRef g_hidpad_manager;
+-static hid_pad *g_hidpads;
++static hid_pad *g_hidpads, *g_hidpads_gc;   // read here; left to GameController
+ static int g_hidpad_log;
+ static void hidpad_attach(hid_pad *d);
+ static void hidpad_detach(hid_pad *d);
+@@ -32,38 +35,87 @@ static void hidpad_value(void *ctx, IOReturn result, void *sender, IOHIDValueRef
+         d->st.hat = pad_hid_hat(x, min, max);
+     } else {
+         int a = pad_hid_axis_of(page, usage); if (a < 0) return;
+-        d->st.axis[a] = pad_hid_norm(x, min, max);
++        float n = pad_hid_norm(x, min, max);
++        d->st.axis[a] = d->st.raw ? pad_hid_raw_axis(&d->st, a, n) : n;
+     }
+     hidpad_read(d);
+ }
+-static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
+-    (void)ctx; (void)sender;
+-    if (result != kIOReturnSuccess || IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDGCSyntheticDeviceKey)) == kCFBooleanTrue) return;
+-    for (hid_pad *d = g_hidpads; d; d = d->next) if (d->hid == hid) return;
+-    if ([GCController supportsHIDDevice:hid]) return;   // front_mac.m reads it through its GCController (once per device: the call is not cheap)
++static hid_pad **hidpad_link(hid_pad **link, IOHIDDeviceRef hid) {
++    while (*link && (*link)->hid != hid) link = &(*link)->next;
++    return link;
++}
++static void hidpad_use(hid_pad *d) {
++    IOHIDDeviceRef hid = d->hid; uint8_t has[PH_AXES] = {0}; int nintendo = 0;
+     NSNumber *vendor = (__bridge NSNumber *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDVendorIDKey)), *product = (__bridge NSNumber *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductIDKey));
+     int vid = vendor.intValue, pid = product.intValue;
+-    hid_pad *d = calloc(1, sizeof *d); if (!d) { LOG("[RED] HID gamepad: cannot allocate device state"); return; }
+-    pad_hid_init(&d->st, getenv("DM_HID_MAP"));
+-    NSString *name = (__bridge NSString *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductKey));
+-    snprintf(d->name, sizeof d->name, "%s", name.UTF8String ?: "HID gamepad");
+     NSArray *els = CFBridgingRelease(IOHIDDeviceCopyMatchingElements(hid, NULL, kIOHIDOptionsTypeNone));
+-    for (id o in els) { IOHIDElementRef e = (__bridge IOHIDElementRef)o; int a = pad_hid_axis_of(IOHIDElementGetUsagePage(e), IOHIDElementGetUsage(e)); if (a >= 0) d->st.has[a] = 1; }
+-    d->hid = (IOHIDDeviceRef)CFRetain(hid); d->next = g_hidpads; g_hidpads = d;
++    for (id o in els) {
++        IOHIDElementRef e = (__bridge IOHIDElementRef)o; int a = pad_hid_axis_of(IOHIDElementGetUsagePage(e), IOHIDElementGetUsage(e));
++        if (a >= 0) has[a] = 1;
++        if (IOHIDElementGetUsagePage(e) == kHIDPage_Button && IOHIDElementGetReportID(e) == PAD_HID_NINTENDO_REPORT) nintendo = 1;
++    }
++    pad_hid_init(&d->st, getenv("DM_HID_MAP"), nintendo); memcpy(d->st.has, has, sizeof has);
++    d->used = 1; d->nintendo = (uint8_t)nintendo;
+     IOHIDDeviceRegisterInputValueCallback(hid, hidpad_value, d);
+     hidpad_attach(d);
+     // HID has no standard button numbering: the default map is 8BitDo's, so another vendor's pad may have its buttons in other places
+-    if (vid != PAD_HID_DEFAULT_VENDOR && !getenv("DM_HID_MAP"))
++    if (vid != PAD_HID_DEFAULT_VENDOR && !nintendo && !getenv("DM_HID_MAP"))
+         LOG("controller '%s' (HID, %04x:%04x): buttons use 8BitDo's numbering; if they are in the wrong places, DM_HID_LOG=1 logs each button's number for a DM_HID_MAP", d->name, vid, pid);
+ }
++static void hidpad_show_player(hid_pad *d, int p) {   // front_mac.m, once the pad has its player
++    if (!d->nintendo) return;
++    uint8_t r[PAD_HID_LIGHTS_SIZE]; pad_hid_lights(r, p);
++    IOReturn e = IOHIDDeviceSetReport(d->hid, kIOHIDReportTypeOutput, r[0], r, sizeof r);
++    if (e != kIOReturnSuccess) LOG("[RED] controller '%s': cannot set its player lights (0x%x)", d->name, e);
++}
++static void hidpad_stop(hid_pad *d) {
++    d->used = 0;
++    IOHIDDeviceRegisterInputValueCallback(d->hid, NULL, NULL);
++    hidpad_detach(d);
++}
++static void hidpad_move(hid_pad *d, hid_pad **from, hid_pad **to) { from = hidpad_link(from, d->hid); *from = d->next; d->next = *to; *to = d; }
++// Once a device's wait is over, a pad GameController still does not list is read here, and one read here that it now lists goes back to it. Runs on the main run loop
++static void hidpad_settle(void) {
++    hid_pad *pads[PAD_HID_MAX]; const char *name[PAD_HID_MAX], *listed[PAD_HID_MAX]; uint8_t raw[PAD_HID_MAX]; int n = 0, m = 0; double now = CFAbsoluteTimeGetCurrent();
++    for (hid_pad *d = g_hidpads_gc; d && n < PAD_HID_MAX; d = d->next) { pads[n] = d; name[n++] = d->name; }
++    for (hid_pad *d = g_hidpads; d && n < PAD_HID_MAX; d = d->next) if (d->gc) { pads[n] = d; name[n++] = d->name; }
++    if (!n) return;
++    for (GCController *c in GCController.controllers) if (m < PAD_HID_MAX) listed[m++] = c.vendorName.UTF8String ?: "";
++    pad_hid_unlisted(name, n, listed, m, raw);
++    for (int i = 0; i < n; i++) {
++        hid_pad *d = pads[i];
++        if (raw[i] && !d->used && d->due <= now) {
++            LOG("controller '%s': GameController does not list it, reading it as a HID gamepad", d->name);
++            hidpad_move(d, &g_hidpads_gc, &g_hidpads); hidpad_use(d);
++        } else if (!raw[i] && d->used) {
++            LOG("controller '%s': GameController lists it now", d->name);
++            hidpad_move(d, &g_hidpads, &g_hidpads_gc); hidpad_stop(d);
++        }
++    }
++}
++static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
++    (void)ctx; (void)sender;
++    if (result != kIOReturnSuccess || IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDGCSyntheticDeviceKey)) == kCFBooleanTrue) return;
++    if (*hidpad_link(&g_hidpads, hid) || *hidpad_link(&g_hidpads_gc, hid)) return;
++    hid_pad *d = calloc(1, sizeof *d); if (!d) { LOG("[RED] HID gamepad: cannot allocate device state"); return; }
++    NSString *name = (__bridge NSString *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductKey));
++    snprintf(d->name, sizeof d->name, "%s", name.UTF8String ?: "HID gamepad");
++    d->hid = (IOHIDDeviceRef)CFRetain(hid);
++    if ([GCController supportsHIDDevice:hid]) {   // once per device: the call is not cheap
++        d->gc = 1; d->due = CFAbsoluteTimeGetCurrent() + HIDPAD_GC_WAIT; d->next = g_hidpads_gc; g_hidpads_gc = d;
++        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((HIDPAD_GC_WAIT + 0.1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ hidpad_settle(); });
++        return;
++    }
++    d->next = g_hidpads; g_hidpads = d;
++    hidpad_use(d);
++}
+ static void hidpad_removed(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
+     (void)ctx; (void)result; (void)sender;
+-    hid_pad **link = &g_hidpads;
+-    while (*link && (*link)->hid != hid) link = &(*link)->next;
++    hid_pad **link = hidpad_link(&g_hidpads, hid);
++    if (!*link) link = hidpad_link(&g_hidpads_gc, hid);
+     if (!*link) return;
+     hid_pad *d = *link; *link = d->next;
+-    IOHIDDeviceRegisterInputValueCallback(hid, NULL, NULL);
+-    hidpad_detach(d);
++    if (d->used) hidpad_stop(d);
+     CFRelease(d->hid); free(d);
+ }
+ static void hidpad_start(void) {
+diff --git a/dm/host/tests/t_pad_hid.c b/dm/host/tests/t_pad_hid.c
+index 48341c732b..6bfe8a9d61 100644
+--- a/dm/host/tests/t_pad_hid.c
++++ b/dm/host/tests/t_pad_hid.c
+@@ -7,17 +7,40 @@ static int checks, fails;
+ 
+ int main(void) {
+     pad_hid h; int32_t s[4];
+-    pad_hid_init(&h, NULL);
++    pad_hid_init(&h, NULL, 0);
+     CHECK(pad_hid_buttons(&h) == 0);
+     h.buttons = 1u << 1; CHECK(pad_hid_buttons(&h) == DM_BTN_A);             // usage 2 (right) is A
+     h.buttons = 1u << 0; CHECK(pad_hid_buttons(&h) == DM_BTN_B);             // usage 1 (bottom) is B
+     h.buttons = 1u << 11 | 1u << 9; CHECK(pad_hid_buttons(&h) == (DM_BTN_PLUS | DM_BTN_ZR));
+-    pad_hid_init(&h, "a=1,B=2,bogus=3,ZR=99,X=,MINUS=13");
++    pad_hid_init(&h, "a=1,B=2,bogus=3,ZR=99,X=,MINUS=13", 0);
+     h.buttons = 1u << 0; CHECK(pad_hid_buttons(&h) == DM_BTN_A);
+     h.buttons = 1u << 12; CHECK(pad_hid_buttons(&h) == DM_BTN_MINUS);
+     h.buttons = 1u << 9; CHECK(pad_hid_buttons(&h) == DM_BTN_ZR);           // 99 skipped: the default stays
+     h.buttons = 1u << 4; CHECK(pad_hid_buttons(&h) == 0);                    // X= maps X to nothing
+-    pad_hid_init(&h, NULL);
++    pad_hid_init(&h, NULL, 1);                                               // Nintendo's report 0x3F: B A Y X L R ZL ZR - + LS RS
++    { static const uint64_t want[12] = {DM_BTN_B, DM_BTN_A, DM_BTN_Y, DM_BTN_X, DM_BTN_L, DM_BTN_R, DM_BTN_ZL, DM_BTN_ZR, DM_BTN_MINUS, DM_BTN_PLUS, DM_BTN_LS, DM_BTN_RS};
++      for (int b = 0; b < 12; b++) { h.buttons = 1u << b; CHECK(pad_hid_buttons(&h) == want[b]); } }
++    h.buttons = 1u << 12 | 1u << 13; CHECK(pad_hid_buttons(&h) == 0);        // Home and Capture are not Npad buttons here
++    pad_hid_init(&h, "X=13", 1); h.buttons = 1u << 12; CHECK(pad_hid_buttons(&h) == DM_BTN_X);   // DM_HID_MAP still replaces entries
++    pad_hid_init(&h, NULL, 1);                                               // a raw stick, as the NANO's: rests at -0.08, reaches 0.78 either way
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.08f)) < 1e-6f);
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, 0.27f) - 0.5f) < 1e-5f);          // half of the first reach
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, 0.70f) - 1) < 1e-5f && fabsf(pad_hid_raw_axis(&h, PH_X, 0.31f) - 0.5f) < 1e-5f);   // past it the reach grows
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.78f) + 1) < 1e-5f);            // full on both sides, though the rest is off centre
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.08f)) < 1e-6f);
++    CHECK(pad_hid_raw_axis(&h, PH_Y, 0.9f) == 1 && h.rest[PH_Y] == 0);       // held while connecting: not a rest
++    pad_hid_init(&h, NULL, 0); CHECK(!h.raw);
++    { uint8_t r[PAD_HID_LIGHTS_SIZE]; pad_hid_lights(r, 0); CHECK(r[0] == 0x01 && r[2] == 0x00 && r[3] == 0x01 && r[9] == 0x40 && r[10] == 0x30 && r[11] == 0x1 && r[12] == 0 && r[48] == 0);
++      pad_hid_lights(r, 3); CHECK(r[11] == 0xF); pad_hid_lights(r, 7); CHECK(r[11] == 0x6); }   // players 1, 4 and 8, as the console lights them
++    { const char *pads[3] = {"Lic Pro Controller", "Xbox Wireless Controller", "Lic Pro Controller"}, *one[1] = {"Xbox Wireless Controller"}, *other[1] = {"Gamepad"}, *two[2] = {"Gamepad", "Lic Pro Controller"};
++      uint8_t raw[3];
++      pad_hid_unlisted(pads, 1, NULL, 0, raw); CHECK(raw[0] == 1);           // nothing listed: only raw HID reads it
++      pad_hid_unlisted(pads, 2, one, 1, raw); CHECK(raw[0] == 1 && raw[1] == 0);   // listed by name: the other pad is the one GameController left out
++      pad_hid_unlisted(pads + 1, 1, one, 1, raw); CHECK(raw[0] == 0);
++      pad_hid_unlisted(pads, 1, other, 1, raw); CHECK(raw[0] == 0);          // a controller no name matched may be this pad: never read twice
++      pad_hid_unlisted(pads, 3, two, 2, raw); CHECK(raw[0] == 0 && raw[1] == 0 && raw[2] == 1);   // one by name, one spare, the third left out
++      pad_hid_unlisted(pads, 3, NULL, 0, raw); CHECK(raw[0] == 1 && raw[1] == 1 && raw[2] == 1); }
++    pad_hid_init(&h, NULL, 0);
+     CHECK(pad_hid_hat(1, 1, 8) == 0 && pad_hid_hat(0, 1, 8) == -1 && pad_hid_hat(8, 0, 7) == -1 && pad_hid_hat(15, 0, 15) == -1);
+     h.hat = pad_hid_hat(4, 1, 8); CHECK(pad_hid_buttons(&h) == (DM_BTN_DOWN | DM_BTN_RIGHT));
+     CHECK(pad_hid_axis_of(1, 0x30) == PH_X && pad_hid_axis_of(1, 0x35) == PH_RZ && pad_hid_axis_of(2, 0xC5) == PH_BRAKE && pad_hid_axis_of(1, 0x39) == -1);
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index 762a2062d7..4af8afdcd8 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -197,6 +197,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - with a controller connected (a DualShock 4 here), `DM_KEYS` and `DM_CTL` presses are logged (`DM_KEYS: … press …`) but the game does not react to them, or only now and then; without the controller the same script works. → [Scripted presses on a path of their own](../reference/services.md#scripted-presses-on-a-path-of-their-own)
+ - taps in handheld mode do nothing, though the game reads the touch screen (the title's PRESS ANY BUTTON, the menus' cards). → [Touch gestures recognized from the touch points](../reference/services.md#touch-gestures-recognized-from-the-touch-points)
+ - on the Mac, the mouse pointer stays over the game picture while playing with a controller or the keyboard, in a window and in fullscreen (issue #675). → [Mac pointer stays over the game](../reference/services.md#mac-pointer-stays-over-the-game)
++- on the Mac, a Bluetooth pad that System Settings shows as connected does nothing in the game, and the log has no `controller '…' connected` line for it. A PowerA NANO pairs as `Lic Pro Controller`, HID vendor and product 0, and its four lights keep running in a chase. → [Bluetooth pad macOS shows as connected gets no input](../reference/services.md#bluetooth-pad-macos-shows-as-connected-gets-no-input)
+ - the Mac dims or turns off its display and can reach the lock screen while the player is using a controller, in a window or in fullscreen. → [Mac display sleep during controller play](../reference/services.md#mac-display-sleep-during-controller-play)
+ - the first boot aborted in `hid::GetMouseState` (the SDK's mouse resource was never initialized). → [Mouse, keyboard and key code maps](../reference/services.md#mouse-keyboard-and-key-code-maps)
+ - the first boot crashed in `hid::detail::SetPalmaBoostMode`, a null read at `sdk+0x238eb0` (the hid service never opened). → [Poké Ball Plus (Palma)](../reference/services.md#poké-ball-plus-palma)
+diff --git a/docs/reference/services.md b/docs/reference/services.md
+index 554125792a..ff6649d96a 100644
+--- a/docs/reference/services.md
++++ b/docs/reference/services.md
+@@ -379,6 +379,14 @@ Most service calls can be found before they crash, before the first boot or the
+ - **Check:** with the pointer over the game, a controller button or the keyboard hides it; moving the mouse shows it; over the title bar, or with another app active, it stays.
+ - **Found on:** every game on the Mac (general); [PR #584](https://github.com/seedds/nxnative/pull/584).
+ 
++### Bluetooth pad macOS shows as connected gets no input
++
++- **Symptom:** on the Mac, a Bluetooth pad that System Settings shows as connected does nothing in the game, and the log has no `controller '…' connected` line for it. A PowerA NANO pairs as `Lic Pro Controller`, HID vendor and product 0, and its four lights keep running in a chase.
++- **Cause:** `+[GCController supportsHIDDevice:]` answers whether a device might be a game controller, not whether GameController lists it. macOS gives a HID gamepad with a pad's elements the fallback personality `Standard MFi Controller` in `AppleGameControllerPersonality.kext`, which sets `GameControllerSupport`, so the call says yes; `gamecontrollerd` still never listed this pad (`GCController.controllers` stayed empty in a foreground app, and the HID device has `GameControllerSupportedHIDDevice` = No). `pad_hid_mac.h` took the yes as a promise and skipped the device, so neither path read it, although it sent reports the whole time. Such a pad is a Pro Controller clone: its report descriptor is Nintendo's, it stays in the simple report `0x3F`, and that report's buttons are numbered differently from the default 8BitDo map.
++- **Fix (resolved):** a device `supportsHIDDevice:` says yes to waits 3 seconds for its `GCController` (`hidpad_settle`, `pad_hid_unlisted`): a listed controller of its name, or one no pad's name matched, covers it, and otherwise it is read as raw HID (log line `GameController does not list it, reading it as a HID gamepad`). One that GameController lists later goes back to it (`GameController lists it now`), so no pad is read twice. Buttons that come in report `0x3F` take that report's numbering, read from the device's elements and not from its name or vendor. Report `0x3F` carries the sticks raw: the NANO's rest 9 and 11% off centre and reach about 0.78 of the axis from there, so a full push gave 61 to 74% and a slightly worse rest would have drifted; `pad_hid_raw_axis` measures each axis from its first value and scales it by the reach seen so far, which starts at 0.7 and only grows. Such a pad also gets its player on its lights, which it chases until a console gives it one (`pad_hid_lights`: subcommand `0x30` of output report `0x01`; the NANO answers `80 30` in report `0x21` and stays in report `0x3F`). `DM_HID_LOG=1` and `DM_HID_MAP` work as for any raw HID pad.
++- **Limits:** report `0x3F` carries no motion, and this path sends the pad no rumble, so such a pad has no gyro or rumble here. The pads this reads through GameController were not re-tested on real hardware; `t_pad_hid.c` checks the matching.
++- **Found on:** a PowerA NANO over Bluetooth on macOS 27.2; it is not specific to a game. Played in [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md), on a host from before `pad_hid_raw_axis`; the scaled sticks were checked on the pad in a small harness around `pad_hid_mac.h`, not yet in a game.
++
+ ### Mac display sleep during controller play
+ 
+ - **Symptom:** the Mac dims or turns off its display and can reach the lock screen while the player is using a controller, in a window or in fullscreen.
