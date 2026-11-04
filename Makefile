@@ -30,6 +30,8 @@ app:
 	mkdir -p "$$bundle/Contents/MacOS"; \
 	cp "$$build_dir/NXNativeDashboard" "$$binary"; \
 	cp "$(APP_PACKAGE)/Info.plist" "$$bundle/Contents/Info.plist"; \
+	mkdir -p "$$bundle/Contents/Resources"; \
+	cp "$(APP_PACKAGE)/AppIcon.icns" "$$bundle/Contents/Resources/AppIcon.icns"; \
 	plutil -lint "$$bundle/Contents/Info.plist"; \
 	test "$$(lipo -archs "$$binary")" = "arm64"; \
 	codesign --sign - --force "$$bundle"; \

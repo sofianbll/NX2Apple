@@ -26,13 +26,13 @@ check_bundle() {
     while IFS= read -r relative; do
         path=$bundle/$relative
         case "$relative" in
-            Contents|Contents/MacOS|Contents/_CodeSignature)
+            Contents|Contents/MacOS|Contents/Resources|Contents/_CodeSignature)
                 if [ ! -d "$path" ] || [ -L "$path" ]; then
                     printf 'Entrée interdite dans le bundle : %s\n' "$relative" >&2
                     return 1
                 fi
                 ;;
-            Contents/Info.plist|Contents/MacOS/NXNativeDashboard|Contents/_CodeSignature/*)
+            Contents/Info.plist|Contents/MacOS/NXNativeDashboard|Contents/Resources/AppIcon.icns|Contents/_CodeSignature/*)
                 if [ ! -f "$path" ] || [ -L "$path" ]; then
                     printf 'Entrée interdite dans le bundle : %s\n' "$relative" >&2
                     return 1

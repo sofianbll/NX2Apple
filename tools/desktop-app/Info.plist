@@ -8,6 +8,8 @@
     <string>NXNative Dashboard</string>
     <key>CFBundleExecutable</key>
     <string>NXNativeDashboard</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>local.nxnative.dashboard</string>
     <key>CFBundleInfoDictionaryVersion</key>
