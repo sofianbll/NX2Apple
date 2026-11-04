@@ -12,3 +12,7 @@ Historique daté des initiatives. Ne décrit jamais l'état présent sans date o
 
 - Étude : [`docs/research/macos-app-packaging.md`](../research/macos-app-packaging.md) (recherche du 2026-11-04, non décisionnelle).
 - **2026-11-04 (soir)** — Corrections après revue commitées, `swift test` borné (13 tests, 3 passes), puis `desktop-app` fusionnée dans `main` (`f592f23`) sur décision de Sofian ; worktrees `desktop-app` et `t04` supprimés. État et suite : `ROADMAP.md` (v0.2.0). Le relais ci-dessus est historique.
+
+## Manette dans la vue Cinéma (v0.2.1)
+
+- **2026-11-04 (nuit)** — Relais de `ses_e57dd7714ffeUN7ieoyhqiW4PM`. Navigation manette livrée sur `main` (`184ad0d`, `520aa96`, `f399541`) : API Gamepad pour les manettes standard ; la PowerA (0000:0000) est invisible pour WebKit, elle est donc lue en HID direct par l'app Mac (`HIDGamepads.swift`, mêmes règles que `pad_hid_mac.h`). DMG reconstruit après `f399541`. Zelda, Rouge Feu FR, Mario Kart 8 et Z-A marqués « Jouable » (`c533571`). En attente : test de Sofian avec la manette dans l'app, puis tags `v0.2.0` et `v0.2.1`. État et critères : `ROADMAP.md`.
