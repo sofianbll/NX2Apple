@@ -1,0 +1,146 @@
+<!doctype html>
+<!-- THROWAWAY: Console complète composée avec nx-components.js. États et actions fictifs, sans persistance. -->
+<!-- Run from NXNative: python3 -m http.server 8768 --bind 127.0.0.1 --directory tools/build-monitor ; open /protos/prototype-console-shared.html -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Prototype Console — composants partagés</title>
+  <link rel="stylesheet" href="./nx-shared.css">
+  <style>
+    html,body{margin:0;background:transparent}*{box-sizing:border-box}[hidden]{display:none!important}
+    .review{font-family:var(--nx-font);color:var(--foreground,#eef3f0);max-width:1360px;margin:0 auto}
+    .tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}.tools p{font-size:.875rem;margin:0;color:var(--muted-foreground,#b9c3c6)}
+    .tabs,.cycle{display:flex;gap:3px;border-radius:8px;background:var(--muted,#20282b);padding:4px}.tabs button,.cycle button{font:inherit;border:0;border-radius:5px;cursor:pointer;background:none;color:inherit;padding:9px 12px;font-size:.875rem}.tabs button[aria-pressed=true]{background:var(--foreground,#eef3f0);color:var(--background,#0a1115)}
+    button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--nx-focus);outline-offset:4px}
+    .frame{width:100%;aspect-ratio:1360/768;position:relative;overflow:hidden;border-radius:12px;background:var(--nx-base)}
+    .canvas{width:1360px;height:768px;transform-origin:top left;position:absolute;inset:0;isolation:isolate;overflow:hidden;color:var(--nx-text);font-family:var(--nx-font);font-size:1rem;background:var(--nx-base)}
+    .reference{position:absolute;inset:0;width:1360px;height:768px;z-index:3;pointer-events:none}.reference img{width:100%;height:100%;display:block}
+    .header{position:absolute;inset:0 0 auto;height:90px}.header::after{content:"";position:absolute;left:36px;right:36px;bottom:0;height:1px;background:var(--nx-hairline)}
+    .brand{position:absolute;left:40px;top:27px;display:flex;align-items:center;gap:14px}.brand-icon{width:35px;height:35px;border-radius:9px;display:grid;place-items:center;background:#4ab83b;color:#fff;box-shadow:0 0 20px #49c84012}.brand-icon svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}.brand-name{font-size:22px;line-height:1;font-weight:600;letter-spacing:-.3px}
+    .account{position:absolute;right:36px;top:23px;display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;flex:none}.avatar img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}.account-name{font-size:16px;line-height:21px;font-weight:500}.online{display:flex;align-items:center;gap:6px;color:var(--nx-green-bright);font-size:13px;line-height:18px}.online::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--nx-green)}
+    .game-slot{position:absolute;top:175px;width:230px}.game-slot.is-selected{z-index:2}
+    .game{width:100%;transform-origin:center;transition:transform .22s var(--nx-spring)}.game[selected]{transform:scale(1.08)}
+    .game-caption{position:absolute;top:255px;left:50%;width:280px;transform:translateX(-50%);text-align:center;visibility:hidden;opacity:0;transition:opacity .2s}.game-slot.is-selected .game-caption{visibility:visible;opacity:1}.game-caption h2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:55px;margin:0 0 10px;font-size:22px;line-height:27px;font-weight:600;letter-spacing:-.2px}
+    .console-build{position:absolute;left:1052px;top:198px}
+    .console-dock{position:absolute;left:410px;top:619px}
+    .footer{position:absolute;left:36px;right:36px;top:711px;height:22px;display:flex;align-items:center;justify-content:space-between;color:var(--nx-muted);font-size:14px}.hint,.hint-group{display:flex;align-items:center;gap:9px}.hint-group{gap:24px}.key{display:inline-grid;place-items:center;width:22px;height:22px;border:1px solid var(--nx-hairline);border-radius:50%;background:var(--nx-raised);color:var(--nx-text-soft);font-size:12px;line-height:1;font-weight:600}
+    .cycle{align-items:center;justify-content:center;gap:10px;border-radius:999px;width:fit-content;padding:4px 8px;margin:14px auto 0;font-size:.8rem}.cycle button{padding:7px 11px}
+    .notes{font-size:.8rem;line-height:1.6;color:var(--muted-foreground,#9eaeb1);margin:12px 0 0;max-width:100ch}.feedback{display:grid;gap:10px;margin-top:20px;font-size:.875rem}.feedback label{display:grid;gap:7px}.feedback select,.feedback textarea{font:inherit;color:var(--foreground,#eef3f0);background:var(--muted,#20282b);border:1px solid var(--border,#364346);padding:10px 12px;border-radius:6px;width:100%}.feedback textarea{min-height:72px;resize:vertical}.actions{display:flex;gap:10px;flex-wrap:wrap}.send,.export{font:inherit;padding:11px 16px;border-radius:6px;cursor:pointer;width:fit-content}.send{border:0;background:var(--foreground,#eef3f0);color:var(--background,#091115)}.send:disabled{opacity:.55;cursor:default}.export{border:1px solid var(--border,#364346);color:inherit;background:transparent}
+    @media(max-width:500px){.tools p{font-size:.8rem}.tabs button{padding:8px 10px;font-size:.8rem}.notes{font-size:.75rem}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <main class="review">
+    <div class="tools"><p>Écran complet · Console · composants partagés</p><div class="tabs" role="group" aria-label="Comparer avec la maquette Console"><button data-view="html" type="button" aria-pressed="true">Prototype HTML</button><button data-view="reference" type="button" aria-pressed="false">Référence</button><button data-view="overlay" type="button" aria-pressed="false">Superposer</button></div></div>
+    <div class="frame" id="frame"><div class="canvas" id="canvas">
+      <div class="nx-bg" aria-hidden="true"></div>
+      <header class="header">
+        <div class="brand"><span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M10 8h12c3 0 5 5 6 11 1 5-1 7-4 4l-4-4h-8l-4 4c-3 3-5 1-4-4 1-6 3-11 6-11Z"/><path d="M9 12v7m-3-3h6"/><circle cx="22" cy="13" r="1"/><circle cx="25" cy="17" r="1"/></svg></span><span class="brand-name">NXNative</span></div>
+        <div class="account"><div class="avatar"><img src="console-block-1-assets/avatar.png" alt="Avatar de Sofian"></div><div><div class="account-name">Sofian</div><div class="online">En ligne</div></div></div>
+      </header>
+      <section class="carousel" aria-label="Bibliothèque de jeux fictive">
+        <div class="game-slot" style="left:38px">
+          <nx-tile class="game" src="console-block-1-assets/stardew.png" game="Stardew Valley" status="ready" label="Jouable"></nx-tile>
+          <div class="game-caption"><h2>Stardew Valley</h2><nx-pill status="ready" label="Prêt à jouer"></nx-pill></div>
+        </div>
+        <div class="game-slot is-selected" style="left:286px">
+          <nx-tile class="game" src="cinema-block-2-assets/zelda.png" game="The Legend of Zelda Link’s Awakening" status="test" label="À tester" selected></nx-tile>
+          <div class="game-caption"><h2>The Legend of Zelda<br>Link’s Awakening</h2><nx-pill status="test" label="À tester"></nx-pill></div>
+        </div>
+        <div class="game-slot" style="left:534px">
+          <nx-tile class="game" src="cinema-block-2-assets/pokemon.png" game="Pokémon FireRed" status="test" label="À tester"></nx-tile>
+          <div class="game-caption"><h2>Pokémon FireRed</h2><nx-pill status="test" label="À tester"></nx-pill></div>
+        </div>
+        <div class="game-slot" style="left:782px">
+          <nx-tile class="game" src="cinema-block-2-assets/mario.png" game="Mario Kart 8 Deluxe" status="ready" label="Jouable"></nx-tile>
+          <div class="game-caption"><h2>Mario Kart 8 Deluxe</h2><nx-pill status="ready" label="Prêt à jouer"></nx-pill></div>
+        </div>
+      </section>
+      <nx-build-card class="console-build" id="build-card" name="Mario Kart — shaders" done="1670" total="29651"></nx-build-card>
+      <nx-dock class="console-dock" id="dock">
+        <nx-nav icon="library" label="Bibliothèque" active></nx-nav>
+        <nx-nav icon="catalog" label="Catalogue"></nx-nav>
+        <nx-nav icon="builds" label="Compilations"></nx-nav>
+        <nx-nav icon="settings" label="Réglages"></nx-nav>
+      </nx-dock>
+      <footer class="footer"><div class="hint"><span class="key" aria-hidden="true">?</span>Aide</div><div class="hint-group"><span class="hint"><span class="key" aria-hidden="true">B</span>Retour</span><span class="hint"><span class="key" aria-hidden="true">A</span>Sélectionner</span></div></footer>
+      <div class="reference" id="reference" hidden><img src="direction-b-console.png" alt="Maquette Console servant de référence"></div>
+    </div></div>
+    <div class="cycle"><button id="previous" type="button" aria-label="Vue précédente">←</button><span id="variant-label">Prototype HTML</span><button id="next" type="button" aria-label="Vue suivante">→</button></div>
+    <p class="notes" id="state" role="status">Console partagée · Simulation uniquement, aucune action réelle.</p>
+    <p class="notes">États et valeurs entièrement fictifs. Contrôles simulés : ←/→ dans le carousel ou le dock, ↑/↓ entre les deux zones, Entrée pour lancer la sélection ; la souris fonctionne aussi. Sur écran étroit, la scène est réduite proportionnellement sans recadrage.</p>
+    <form class="feedback" id="feedback"><label for="verdict">Ton avis sur l’écran Console partagé<select id="verdict" name="verdict" required><option value="" disabled selected>Choisir…</option><option value="validate">Valider visuellement cet écran</option><option value="revise">Demander des corrections</option></select></label><label for="note">Précisions<textarea id="note" name="note" aria-label="Précisions pour l’écran Console partagé" placeholder="Carousel, carte de construction, dock, espacements…"></textarea></label><div class="actions"><button class="send" id="send" type="submit">Envoyer mon retour</button><button class="export" id="export" type="button">Exporter mon retour</button></div></form>
+  </main>
+  <script type="module">
+    import '../nx-components.js';
+
+    const variants=['html','reference','overlay'],labels={html:'Prototype HTML',reference:'Référence Console',overlay:'Superposition à 50 %'};
+    const $=id=>document.getElementById(id),games=[...document.querySelectorAll('nx-tile')],dockButtons=[...document.querySelectorAll('nx-nav')];
+    let variant=new URL(location.href).searchParams.get('variant') || 'html',selected=1,dockSelected=0,zone='carousel';
+    console.assert(games.length===4 && dockButtons.length===4 && $('build-card'),'Prototype Console : composition incomplète.');
+
+    function fit(){$('canvas').style.transform=`scale(${Math.min(1,$('frame').clientWidth/1360)})`;}
+    function setVariant(value){
+      variant=variants.includes(value)?value:'html';
+      $('reference').hidden=variant==='html';
+      $('reference').style.opacity=variant==='overlay'?'.5':'1';
+      document.querySelectorAll('[data-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===variant)));
+      $('variant-label').textContent=labels[variant];
+      $('state').textContent=`${labels[variant]} · Console partagée · Simulation uniquement, aucune action réelle.`;
+      if(location.protocol.startsWith('http')){const url=new URL(location.href);url.searchParams.set('variant',variant);history.replaceState(null,'',url);}
+    }
+    function cycle(step){setVariant(variants[(variants.indexOf(variant)+step+variants.length)%variants.length]);}
+    function selectGame(index,announce=false){
+      selected=(index+games.length)%games.length;
+      games.forEach((tile,i)=>{tile.selected=i===selected;tile.parentElement.classList.toggle('is-selected',i===selected);});
+      if(announce)$('state').textContent=`Simulation : ${games[selected].getAttribute('game')} sélectionné.`;
+    }
+    function selectDock(index,announce=false){
+      dockSelected=(index+dockButtons.length)%dockButtons.length;
+      dockButtons.forEach((button,i)=>{button.active=i===dockSelected;});
+      if(announce)$('state').textContent=`Simulation : ${dockButtons[dockSelected].getAttribute('label')}. Aucune navigation réelle.`;
+    }
+    function launchSelected(){$('state').textContent=`Simulation : lancer ${games[selected].getAttribute('game')}. Aucun jeu lancé.`;}
+
+    document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>setVariant(button.dataset.view));
+    $('previous').onclick=()=>cycle(-1);$('next').onclick=()=>cycle(1);
+    document.addEventListener('nx-select',event=>{
+      const index=games.indexOf(event.target);
+      if(index<0)return;
+      zone='carousel';selectGame(index,true);
+    });
+    dockButtons.forEach((button,index)=>button.addEventListener('click',()=>{zone='dock';selectDock(index,true);}));
+    document.addEventListener('nx-details',event=>{$('state').textContent=`Simulation : détails de « ${event.detail.name} ». Aucun build consulté.`;});
+    document.addEventListener('focusin',event=>{
+      const tile=event.target.closest?.('nx-tile'),nav=event.target.closest?.('nx-nav');
+      if(tile){zone='carousel';selectGame(games.indexOf(tile));}
+      else if(nav&&dockButtons.includes(nav)){zone='dock';selectDock(dockButtons.indexOf(nav));}
+      else if(event.target.closest?.('nx-build-card'))zone='build';
+    });
+    document.addEventListener('keydown',event=>{
+      if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.target.closest('input,textarea,select,[contenteditable=true],.tools,.cycle,.feedback'))return;
+      const key=event.key;
+      if((key==='ArrowLeft'||key==='ArrowRight')&&(zone==='carousel'||zone==='dock')){
+        event.preventDefault();event.stopPropagation();
+        const step=key==='ArrowRight'?1:-1;
+        if(zone==='carousel'){selectGame(selected+step,true);games[selected].focus({preventScroll:true});}
+        else{selectDock(dockSelected+step,true);dockButtons[dockSelected].focus({preventScroll:true});}
+      }else if((key==='ArrowDown'||key==='ArrowUp')&&(zone==='carousel'||zone==='dock')){
+        event.preventDefault();event.stopPropagation();
+        zone=key==='ArrowDown'?'dock':'carousel';
+        (zone==='dock'?dockButtons[dockSelected]:games[selected]).focus({preventScroll:true});
+      }else if(key==='Enter'&&zone==='carousel'&&(event.target===document.body||event.target.closest?.('nx-tile'))){
+        event.preventDefault();event.stopPropagation();launchSelected();
+      }
+    },true);
+
+    function feedback(){return {block:'console-shared',verdict:$('verdict').value,note:$('note').value.trim(),variant};}
+    $('feedback').onsubmit=async event=>{event.preventDefault();const answer=feedback();if(!answer.verdict)return;const summary=answer.verdict==='validate'?'Console partagée validée':'Console partagée à reprendre';if(typeof openchamber!=='undefined'&&typeof openchamber.submit==='function'){await openchamber.submit(answer,summary);$('send').disabled=true;}else $('state').textContent=summary;};
+    $('export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(feedback(),null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='retour-prototype-console-shared.json';document.body.append(link);link.click();link.remove();URL.revokeObjectURL(url);};
+    const saved=typeof openchamber!=='undefined'?openchamber.answer:null;if(saved?.block==='console-shared'){$('verdict').value=saved.verdict;$('note').value=saved.note||'';variant=saved.variant;$('send').disabled=true;}
+    new ResizeObserver(fit).observe($('frame'));fit();setVariant(variant);
+  </script>
+</body>
+</html>

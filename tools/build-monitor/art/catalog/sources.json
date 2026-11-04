@@ -1,0 +1,802 @@
+{
+  "0100000000010000": {
+    "name": "Super Mario Odyssey",
+    "file": "0100000000010000.jpg",
+    "source": "https://api.nlib.cc/nx/0100000000010000/icon/512",
+    "kind": "cover"
+  },
+  "0100000011D90000": {
+    "name": "Pokémon Brilliant Diamond",
+    "file": "0100000011D90000.jpg",
+    "source": "https://api.nlib.cc/nx/0100000011D90000/icon/512",
+    "kind": "cover"
+  },
+  "010005501E68C000": {
+    "name": "Ace Attorney Investigations Collection",
+    "file": "010005501E68C000.jpg",
+    "source": "https://api.nlib.cc/nx/010005501E68C000/icon/512",
+    "kind": "cover"
+  },
+  "010012101468C000": {
+    "name": "Metroid Prime Remastered",
+    "file": "010012101468C000.jpg",
+    "source": "https://api.nlib.cc/nx/010012101468C000/icon/512",
+    "kind": "cover"
+  },
+  "010013C00E930000": {
+    "name": "Hollow Knight: Silksong",
+    "file": "010013C00E930000.jpg",
+    "source": "https://api.nlib.cc/nx/010013C00E930000/icon/512",
+    "kind": "cover"
+  },
+  "010014C011146000": {
+    "name": "Subnautica: Below Zero",
+    "file": "010014C011146000.jpg",
+    "source": "https://api.nlib.cc/nx/010014C011146000/icon/512",
+    "kind": "cover"
+  },
+  "010014E00DB56000": {
+    "name": "Digimon Story Cyber Sleuth: Complete Edition",
+    "file": "010014E00DB56000.jpg",
+    "source": "https://api.nlib.cc/nx/010014E00DB56000/icon/512",
+    "kind": "cover"
+  },
+  "010015100B514000": {
+    "name": "Super Mario Bros. Wonder",
+    "file": "010015100B514000.jpg",
+    "source": "https://api.nlib.cc/nx/010015100B514000/icon/512",
+    "kind": "cover"
+  },
+  "0100152000022000": {
+    "name": "Mario Kart 8 Deluxe",
+    "file": "0100152000022000.jpg",
+    "source": "https://api.nlib.cc/nx/0100152000022000/icon/512",
+    "kind": "cover"
+  },
+  "010016100A186000": {
+    "name": "SteamWorld Heist: Ultimate Edition",
+    "file": "010016100A186000.jpg",
+    "source": "https://api.nlib.cc/nx/010016100A186000/icon/512",
+    "kind": "cover"
+  },
+  "0100199023B2E000": {
+    "name": "Atelier Ryza: Ever Darkness & the Secret Hideout DX",
+    "file": "0100199023B2E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100199023B2E000/icon/512",
+    "kind": "cover"
+  },
+  "01001F5010DFA000": {
+    "name": "Pokémon Legends: Arceus",
+    "file": "01001F5010DFA000.jpg",
+    "source": "https://api.nlib.cc/nx/01001F5010DFA000/icon/512",
+    "kind": "cover"
+  },
+  "010020400E1C2000": {
+    "name": "Raging Loop",
+    "file": "010020400E1C2000.jpg",
+    "source": "https://api.nlib.cc/nx/010020400E1C2000/icon/512",
+    "kind": "cover"
+  },
+  "010020D01AD24000": {
+    "name": "ANIMAL WELL",
+    "file": "010020D01AD24000.jpg",
+    "source": "https://api.nlib.cc/nx/010020D01AD24000/icon/512",
+    "kind": "cover"
+  },
+  "0100217023F6C000": {
+    "name": "Well Dweller",
+    "file": "0100217023F6C000.jpg",
+    "source": "https://api.nlib.cc/nx/0100217023F6C000/icon/512",
+    "kind": "cover"
+  },
+  "010028600EBDA000": {
+    "name": "Super Mario 3D World + Bowser's Fury",
+    "file": "010028600EBDA000.jpg",
+    "source": "https://api.nlib.cc/nx/010028600EBDA000/icon/512",
+    "kind": "cover"
+  },
+  "010029B0118E8000": {
+    "name": "Need for Speed: Hot Pursuit Remastered",
+    "file": "010029B0118E8000.jpg",
+    "source": "https://api.nlib.cc/nx/010029B0118E8000/icon/512",
+    "kind": "cover"
+  },
+  "010029B018432000": {
+    "name": "Ghost Trick: Phantom Detective",
+    "file": "010029B018432000.jpg",
+    "source": "https://api.nlib.cc/nx/010029B018432000/icon/512",
+    "kind": "cover"
+  },
+  "01002B00111A2000": {
+    "name": "Hyrule Warriors: Age of Calamity",
+    "file": "01002B00111A2000.jpg",
+    "source": "https://api.nlib.cc/nx/01002B00111A2000/icon/512",
+    "kind": "cover"
+  },
+  "01002B30028F6000": {
+    "name": "Celeste",
+    "file": "01002B30028F6000.jpg",
+    "source": "https://api.nlib.cc/nx/01002B30028F6000/icon/512",
+    "kind": "cover"
+  },
+  "01002CD00A51C000": {
+    "name": "Baba Is You",
+    "file": "01002CD00A51C000.jpg",
+    "source": "https://api.nlib.cc/nx/01002CD00A51C000/icon/512",
+    "kind": "cover"
+  },
+  "01002E7016C46000": {
+    "name": "Cult of the Lamb",
+    "file": "01002E7016C46000.jpg",
+    "source": "https://api.nlib.cc/nx/01002E7016C46000/icon/512",
+    "kind": "cover"
+  },
+  "0100300012F2A000": {
+    "name": "Advance Wars 1+2: Re-Boot Camp",
+    "file": "0100300012F2A000.jpg",
+    "source": "https://api.nlib.cc/nx/0100300012F2A000/icon/512",
+    "kind": "cover"
+  },
+  "0100317013770000": {
+    "name": "Mario + Rabbids Sparks of Hope",
+    "file": "0100317013770000.jpg",
+    "source": "https://api.nlib.cc/nx/0100317013770000/icon/512",
+    "kind": "cover"
+  },
+  "010031F019294000": {
+    "name": "Super Monkey Ball Banana Rumble",
+    "file": "010031F019294000.jpg",
+    "source": "https://api.nlib.cc/nx/010031F019294000/icon/512",
+    "kind": "cover"
+  },
+  "010032E00E6E2000": {
+    "name": "Return of the Obra Dinn",
+    "file": "010032E00E6E2000.jpg",
+    "source": "https://api.nlib.cc/nx/010032E00E6E2000/icon/512",
+    "kind": "cover"
+  },
+  "0100346017304000": {
+    "name": "Taiko Risshiden V DX",
+    "file": "0100346017304000.jpg",
+    "source": "https://api.nlib.cc/nx/0100346017304000/icon/512",
+    "kind": "cover"
+  },
+  "010036E00FB20000": {
+    "name": "The Great Ace Attorney Chronicles",
+    "file": "010036E00FB20000.jpg",
+    "source": "https://api.nlib.cc/nx/010036E00FB20000/icon/512",
+    "kind": "cover"
+  },
+  "010038600B27E000": {
+    "name": "Bastion",
+    "file": "010038600B27E000.jpg",
+    "source": "https://api.nlib.cc/nx/010038600B27E000/icon/512",
+    "kind": "cover"
+  },
+  "010038B015560000": {
+    "name": "FINAL FANTASY TACTICS - The Ivalice Chronicles",
+    "file": "010038B015560000.jpg",
+    "source": "https://api.nlib.cc/nx/010038B015560000/icon/512",
+    "kind": "cover"
+  },
+  "01003E601E324000": {
+    "name": "DRAGON QUEST III HD-2D Remake",
+    "file": "01003E601E324000.jpg",
+    "source": "https://api.nlib.cc/nx/01003E601E324000/icon/512",
+    "kind": "cover"
+  },
+  "01003FC01670C000": {
+    "name": "13 Sentinels: Aegis Rim",
+    "file": "01003FC01670C000.jpg",
+    "source": "https://api.nlib.cc/nx/01003FC01670C000/icon/512",
+    "kind": "cover"
+  },
+  "010040801A4C8000": {
+    "name": "Blasphemous 2",
+    "file": "010040801A4C8000.jpg",
+    "source": "https://api.nlib.cc/nx/010040801A4C8000/icon/512",
+    "kind": "cover"
+  },
+  "0100429011144000": {
+    "name": "Subnautica",
+    "file": "0100429011144000.jpg",
+    "source": "https://api.nlib.cc/nx/0100429011144000/icon/512",
+    "kind": "cover"
+  },
+  "010045C014650000": {
+    "name": "13 Sentinels: Aegis Rim, Japanese release",
+    "file": "010045C014650000.jpg",
+    "source": "https://api.nlib.cc/nx/010045C014650000/icon/512",
+    "kind": "cover"
+  },
+  "01004A4010FEA000": {
+    "name": "Bayonetta 3",
+    "file": "01004A4010FEA000.jpg",
+    "source": "https://api.nlib.cc/nx/01004A4010FEA000/icon/512",
+    "kind": "cover"
+  },
+  "01004AB00A260000": {
+    "name": "DARK SOULS: REMASTERED",
+    "file": "01004AB00A260000.jpg",
+    "source": "https://api.nlib.cc/nx/01004AB00A260000/icon/512",
+    "kind": "cover"
+  },
+  "01004D300C5AE000": {
+    "name": "Kirby and the Forgotten Land",
+    "file": "01004D300C5AE000.jpg",
+    "source": "https://api.nlib.cc/nx/01004D300C5AE000/icon/512",
+    "kind": "cover"
+  },
+  "010051701FB46000": {
+    "name": "Monster Train 2",
+    "file": "010051701FB46000.jpg",
+    "source": "https://api.nlib.cc/nx/010051701FB46000/icon/512",
+    "kind": "cover"
+  },
+  "01005270232F2000": {
+    "name": "Octopath Traveler 0",
+    "file": "01005270232F2000.jpg",
+    "source": "https://api.nlib.cc/nx/01005270232F2000/icon/512",
+    "kind": "cover"
+  },
+  "0100535012974000": {
+    "name": "Hades",
+    "file": "0100535012974000.jpg",
+    "source": "https://api.nlib.cc/nx/0100535012974000/icon/512",
+    "kind": "cover"
+  },
+  "010054B01AD92000": {
+    "name": "Unicorn Overlord, Asian release",
+    "file": "010054B01AD92000.jpg",
+    "source": "https://api.nlib.cc/nx/010054B01AD92000/icon/512",
+    "kind": "cover"
+  },
+  "010055D009F78000": {
+    "name": "Fire Emblem: Three Houses",
+    "file": "010055D009F78000.jpg",
+    "source": "https://api.nlib.cc/nx/010055D009F78000/icon/512",
+    "kind": "cover"
+  },
+  "010056B015FE8000": {
+    "name": "NieR:Automata The End of YoRHa Edition",
+    "file": "010056B015FE8000.jpg",
+    "source": "https://api.nlib.cc/nx/010056B015FE8000/icon/512",
+    "kind": "cover"
+  },
+  "010057D006492000": {
+    "name": "OCTOPATH TRAVELER",
+    "file": "010057D006492000.jpg",
+    "source": "https://api.nlib.cc/nx/010057D006492000/icon/512",
+    "kind": "cover"
+  },
+  "01005CA01580E000": {
+    "name": "Persona 5 Royal",
+    "file": "01005CA01580E000.jpg",
+    "source": "https://api.nlib.cc/nx/01005CA01580E000/icon/512",
+    "kind": "cover"
+  },
+  "01006000040C2000": {
+    "name": "Yoshi's Crafted World",
+    "file": "01006000040C2000.jpg",
+    "source": "https://api.nlib.cc/nx/01006000040C2000/icon/512",
+    "kind": "cover"
+  },
+  "0100606026F12000": {
+    "name": "FINAL FANTASY RESONANCE",
+    "file": "0100606026F12000.jpg",
+    "source": "https://api.nlib.cc/nx/0100606026F12000/icon/512",
+    "kind": "cover"
+  },
+  "0100620012D6E000": {
+    "name": "Big Brain Academy: Brain vs. Brain",
+    "file": "0100620012D6E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100620012D6E000/icon/512",
+    "kind": "cover"
+  },
+  "010062B01525C000": {
+    "name": "Persona 4 Golden",
+    "file": "010062B01525C000.jpg",
+    "source": "https://api.nlib.cc/nx/010062B01525C000/icon/512",
+    "kind": "cover"
+  },
+  "0100633007D48000": {
+    "name": "Hollow Knight",
+    "file": "0100633007D48000.jpg",
+    "source": "https://api.nlib.cc/nx/0100633007D48000/icon/512",
+    "kind": "cover"
+  },
+  "010063301BD50000": {
+    "name": "SUPER ROBOT WARS Y",
+    "file": "010063301BD50000.jpg",
+    "source": "https://api.nlib.cc/nx/010063301BD50000/icon/512",
+    "kind": "cover"
+  },
+  "0100646009FBE000": {
+    "name": "Dead Cells",
+    "file": "0100646009FBE000.jpg",
+    "source": "https://api.nlib.cc/nx/0100646009FBE000/icon/512",
+    "kind": "cover"
+  },
+  "010067300059A000": {
+    "name": "Mario + Rabbids Kingdom Battle",
+    "file": "010067300059A000.jpg",
+    "source": "https://api.nlib.cc/nx/010067300059A000/icon/512",
+    "kind": "cover"
+  },
+  "010069401ADB8000": {
+    "name": "Unicorn Overlord",
+    "file": "010069401ADB8000.jpg",
+    "source": "https://api.nlib.cc/nx/010069401ADB8000/icon/512",
+    "kind": "cover"
+  },
+  "0100698009C6E000": {
+    "name": "Blasphemous",
+    "file": "0100698009C6E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100698009C6E000/icon/512",
+    "kind": "cover"
+  },
+  "010069C01AB82000": {
+    "name": "SHIN MEGAMI TENSEI V: Vengeance",
+    "file": "010069C01AB82000.jpg",
+    "source": "https://api.nlib.cc/nx/010069C01AB82000/icon/512",
+    "kind": "cover"
+  },
+  "01006A800016E000": {
+    "name": "Super Smash Bros. Ultimate",
+    "file": "01006A800016E000.jpg",
+    "source": "https://api.nlib.cc/nx/01006A800016E000/icon/512",
+    "kind": "cover"
+  },
+  "01006BB00C6F0000": {
+    "name": "The Legend of Zelda: Link's Awakening",
+    "file": "01006BB00C6F0000.jpg",
+    "source": "https://api.nlib.cc/nx/01006BB00C6F0000/icon/512",
+    "kind": "cover"
+  },
+  "01006C300E9F0000": {
+    "name": "DRAGON QUEST XI S: Echoes of an Elusive Age – Definitive Edition",
+    "file": "01006C300E9F0000.jpg",
+    "source": "https://api.nlib.cc/nx/01006C300E9F0000/icon/512",
+    "kind": "cover"
+  },
+  "01006F8002326000": {
+    "name": "Animal Crossing: New Horizons",
+    "file": "01006F8002326000.jpg",
+    "source": "https://api.nlib.cc/nx/01006F8002326000/icon/512",
+    "kind": "cover"
+  },
+  "01006FE013472000": {
+    "name": "Mario Party Superstars",
+    "file": "01006FE013472000.jpg",
+    "source": "https://api.nlib.cc/nx/01006FE013472000/icon/512",
+    "kind": "cover"
+  },
+  "0100713016CCC000": {
+    "name": "AI: THE SOMNIUM FILES - nirvanA Initiative",
+    "file": "0100713016CCC000.jpg",
+    "source": "https://api.nlib.cc/nx/0100713016CCC000/icon/512",
+    "kind": "cover"
+  },
+  "01007300020FA000": {
+    "name": "ASTRAL CHAIN",
+    "file": "01007300020FA000.jpg",
+    "source": "https://api.nlib.cc/nx/01007300020FA000/icon/512",
+    "kind": "cover"
+  },
+  "010074F013262000": {
+    "name": "Xenoblade Chronicles 3",
+    "file": "010074F013262000.jpg",
+    "source": "https://api.nlib.cc/nx/010074F013262000/icon/512",
+    "kind": "cover"
+  },
+  "010076F0049A2000": {
+    "name": "Bayonetta",
+    "file": "010076F0049A2000.jpg",
+    "source": "https://api.nlib.cc/nx/010076F0049A2000/icon/512",
+    "kind": "cover"
+  },
+  "01007960049A0000": {
+    "name": "Bayonetta 2",
+    "file": "01007960049A0000.jpg",
+    "source": "https://api.nlib.cc/nx/01007960049A0000/icon/512",
+    "kind": "cover"
+  },
+  "01007BB017812000": {
+    "name": "Portal",
+    "file": "01007BB017812000.jpg",
+    "source": "https://api.nlib.cc/nx/01007BB017812000/icon/512",
+    "kind": "cover"
+  },
+  "01007EF00011E000": {
+    "name": "The Legend of Zelda: Breath of the Wild",
+    "file": "01007EF00011E000.jpg",
+    "source": "https://api.nlib.cc/nx/01007EF00011E000/icon/512",
+    "kind": "cover"
+  },
+  "010086A022444000": {
+    "name": "BALL x PIT",
+    "file": "010086A022444000.jpg",
+    "source": "https://api.nlib.cc/nx/010086A022444000/icon/512",
+    "kind": "cover"
+  },
+  "010089B00D09C000": {
+    "name": "AI: THE SOMNIUM FILES",
+    "file": "010089B00D09C000.jpg",
+    "source": "https://api.nlib.cc/nx/010089B00D09C000/icon/512",
+    "kind": "cover"
+  },
+  "010089C01E9CA000": {
+    "name": "SteamWorld Heist II",
+    "file": "010089C01E9CA000.jpg",
+    "source": "https://api.nlib.cc/nx/010089C01E9CA000/icon/512",
+    "kind": "cover"
+  },
+  "01008BC024FDE000": {
+    "name": "STEINS;GATE RE:BOOT",
+    "file": "01008BC024FDE000.jpg",
+    "source": "https://api.nlib.cc/nx/01008BC024FDE000/icon/512",
+    "kind": "cover"
+  },
+  "01008C0016544000": {
+    "name": "Sea of Stars",
+    "file": "01008C0016544000.jpg",
+    "source": "https://api.nlib.cc/nx/01008C0016544000/icon/512",
+    "kind": "cover"
+  },
+  "01008CF01BAAC000": {
+    "name": "The Legend of Zelda: Echoes of Wisdom",
+    "file": "01008CF01BAAC000.jpg",
+    "source": "https://api.nlib.cc/nx/01008CF01BAAC000/icon/512",
+    "kind": "cover"
+  },
+  "01008D7016438000": {
+    "name": "13 Sentinels: Aegis Rim, Asian release",
+    "file": "01008D7016438000.jpg",
+    "source": "https://api.nlib.cc/nx/01008D7016438000/icon/512",
+    "kind": "cover"
+  },
+  "01008DB008C2C000": {
+    "name": "Pokémon Shield",
+    "file": "01008DB008C2C000.jpg",
+    "source": "https://api.nlib.cc/nx/01008DB008C2C000/icon/512",
+    "kind": "cover"
+  },
+  "01008F6008C5E000": {
+    "name": "Pokémon Violet",
+    "file": "01008F6008C5E000.jpg",
+    "source": "https://api.nlib.cc/nx/01008F6008C5E000/icon/512",
+    "kind": "cover"
+  },
+  "010092B0091D0000": {
+    "name": "Team Sonic Racing",
+    "file": "010092B0091D0000.jpg",
+    "source": "https://api.nlib.cc/nx/010092B0091D0000/icon/512",
+    "kind": "cover"
+  },
+  "01009320084A4000": {
+    "name": "SteamWorld Dig",
+    "file": "01009320084A4000.jpg",
+    "source": "https://api.nlib.cc/nx/01009320084A4000/icon/512",
+    "kind": "cover"
+  },
+  "010093801237C000": {
+    "name": "Metroid Dread",
+    "file": "010093801237C000.jpg",
+    "source": "https://api.nlib.cc/nx/010093801237C000/icon/512",
+    "kind": "cover"
+  },
+  "0100965017338000": {
+    "name": "Super Mario Party Jamboree",
+    "file": "0100965017338000.jpg",
+    "source": "https://api.nlib.cc/nx/0100965017338000/icon/512",
+    "kind": "cover"
+  },
+  "010099C022B96000": {
+    "name": "Super Mario Galaxy",
+    "file": "010099C022B96000.jpg",
+    "source": "https://api.nlib.cc/nx/010099C022B96000/icon/512",
+    "kind": "cover"
+  },
+  "01009BF0072D4000": {
+    "name": "Captain Toad: Treasure Tracker",
+    "file": "01009BF0072D4000.jpg",
+    "source": "https://api.nlib.cc/nx/01009BF0072D4000/icon/512",
+    "kind": "cover"
+  },
+  "01009D901BC56000": {
+    "name": "Donkey Kong Country Returns HD",
+    "file": "01009D901BC56000.jpg",
+    "source": "https://api.nlib.cc/nx/01009D901BC56000/icon/512",
+    "kind": "cover"
+  },
+  "0100A00019DE0000": {
+    "name": "Hades II",
+    "file": "0100A00019DE0000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A00019DE0000/icon/512",
+    "kind": "cover"
+  },
+  "0100A3501946E000": {
+    "name": "OCTOPATH TRAVELER II",
+    "file": "0100A3501946E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A3501946E000/icon/512",
+    "kind": "cover"
+  },
+  "0100A3900C3E2000": {
+    "name": "Paper Mario: The Origami King",
+    "file": "0100A3900C3E2000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A3900C3E2000/icon/512",
+    "kind": "cover"
+  },
+  "0100A3D008C5C000": {
+    "name": "Pokémon Scarlet",
+    "file": "0100A3D008C5C000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A3D008C5C000/icon/512",
+    "kind": "cover"
+  },
+  "0100A5C00D162000": {
+    "name": "Cuphead",
+    "file": "0100A5C00D162000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A5C00D162000/icon/512",
+    "kind": "cover"
+  },
+  "0100A6301214E000": {
+    "name": "Fire Emblem Engage",
+    "file": "0100A6301214E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A6301214E000/icon/512",
+    "kind": "cover"
+  },
+  "0100A83022A22000": {
+    "name": "Absolum",
+    "file": "0100A83022A22000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A83022A22000/icon/512",
+    "kind": "cover"
+  },
+  "0100A9D01C446000": {
+    "name": "DRAGON QUEST VII Reimagined",
+    "file": "0100A9D01C446000.jpg",
+    "source": "https://api.nlib.cc/nx/0100A9D01C446000/icon/512",
+    "kind": "cover"
+  },
+  "0100ABD01785C000": {
+    "name": "Portal 2",
+    "file": "0100ABD01785C000.jpg",
+    "source": "https://api.nlib.cc/nx/0100ABD01785C000/icon/512",
+    "kind": "cover"
+  },
+  "0100ABF008968000": {
+    "name": "Pokémon Sword",
+    "file": "0100ABF008968000.jpg",
+    "source": "https://api.nlib.cc/nx/0100ABF008968000/icon/512",
+    "kind": "cover"
+  },
+  "0100ACD0163D0000": {
+    "name": "Batman: Arkham Knight",
+    "file": "0100ACD0163D0000.jpg",
+    "source": "https://api.nlib.cc/nx/0100ACD0163D0000/icon/512",
+    "kind": "cover"
+  },
+  "0100AE00096EA000": {
+    "name": "Hyrule Warriors: Definitive Edition",
+    "file": "0100AE00096EA000.jpg",
+    "source": "https://api.nlib.cc/nx/0100AE00096EA000/icon/512",
+    "kind": "cover"
+  },
+  "0100B04011742000": {
+    "name": "Monster Hunter Rise",
+    "file": "0100B04011742000.jpg",
+    "source": "https://api.nlib.cc/nx/0100B04011742000/icon/512",
+    "kind": "cover"
+  },
+  "0100B7C00933A000": {
+    "name": "Pikmin 4",
+    "file": "0100B7C00933A000.jpg",
+    "source": "https://api.nlib.cc/nx/0100B7C00933A000/icon/512",
+    "kind": "cover"
+  },
+  "0100B8A026F14000": {
+    "name": "FINAL FANTASY RESONANCE, Asian release",
+    "file": "0100B8A026F14000.jpg",
+    "source": "https://api.nlib.cc/nx/0100B8A026F14000/icon/512",
+    "kind": "cover"
+  },
+  "0100B8E016F76000": {
+    "name": "NieR:Automata The End of YoRHa Edition, Asian release",
+    "file": "0100B8E016F76000.jpg",
+    "source": "https://api.nlib.cc/nx/0100B8E016F76000/icon/512",
+    "kind": "cover"
+  },
+  "0100B99019412000": {
+    "name": "Mario vs. Donkey Kong",
+    "file": "0100B99019412000.jpg",
+    "source": "https://api.nlib.cc/nx/0100B99019412000/icon/512",
+    "kind": "cover"
+  },
+  "0100BA4026E94000": {
+    "name": "Castlevania: Belmont's Curse",
+    "file": "0100BA4026E94000.jpg",
+    "source": "https://api.nlib.cc/nx/0100BA4026E94000/icon/512",
+    "kind": "cover"
+  },
+  "0100BC0018138000": {
+    "name": "Super Mario RPG",
+    "file": "0100BC0018138000.jpg",
+    "source": "https://api.nlib.cc/nx/0100BC0018138000/icon/512",
+    "kind": "cover"
+  },
+  "0100BC300CB48000": {
+    "name": "FINAL FANTASY X/X-2 HD Remaster",
+    "file": "0100BC300CB48000.jpg",
+    "source": "https://api.nlib.cc/nx/0100BC300CB48000/icon/512",
+    "kind": "cover"
+  },
+  "0100BF00112C0000": {
+    "name": "Catherine: Full Body",
+    "file": "0100BF00112C0000.jpg",
+    "source": "https://api.nlib.cc/nx/0100BF00112C0000/icon/512",
+    "kind": "cover"
+  },
+  "0100C1F0051B6000": {
+    "name": "Donkey Kong Country: Tropical Freeze",
+    "file": "0100C1F0051B6000.jpg",
+    "source": "https://api.nlib.cc/nx/0100C1F0051B6000/icon/512",
+    "kind": "cover"
+  },
+  "0100C2A01A730000": {
+    "name": "ROMANCE OF THE THREE KINGDOMS 8 REMAKE",
+    "file": "0100C2A01A730000.jpg",
+    "source": "https://api.nlib.cc/nx/0100C2A01A730000/icon/512",
+    "kind": "cover"
+  },
+  "0100C49025D3E000": {
+    "name": "EA SPORTS FC 27",
+    "file": "0100C49025D3E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100C49025D3E000/icon/512",
+    "kind": "cover"
+  },
+  "0100CA9002322000": {
+    "name": "SteamWorld Dig 2",
+    "file": "0100CA9002322000.jpg",
+    "source": "https://api.nlib.cc/nx/0100CA9002322000/icon/512",
+    "kind": "cover"
+  },
+  "0100CC80140F8000": {
+    "name": "TRIANGLE STRATEGY",
+    "file": "0100CC80140F8000.jpg",
+    "source": "https://api.nlib.cc/nx/0100CC80140F8000/icon/512",
+    "kind": "cover"
+  },
+  "0100CD801CE5E000": {
+    "name": "Balatro",
+    "file": "0100CD801CE5E000.jpg",
+    "source": "https://api.nlib.cc/nx/0100CD801CE5E000/icon/512",
+    "kind": "cover"
+  },
+  "0100CE4010AAC000": {
+    "name": "FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition",
+    "file": "0100CE4010AAC000.jpg",
+    "source": "https://api.nlib.cc/nx/0100CE4010AAC000/icon/512",
+    "kind": "cover"
+  },
+  "0100D5B026844000": {
+    "name": "Silver Pines",
+    "file": "0100D5B026844000.jpg",
+    "source": "https://raw.githubusercontent.com/seedds/nxnative/65501fbbaf8526f7aab0a1edd028135888590f8e/docs/images/silver-pines.jpg",
+    "kind": "screenshot",
+    "provenance": {
+      "repo": "https://github.com/seedds/nxnative",
+      "path": "docs/images/silver-pines.jpg",
+      "commit": "65501fbbaf8526f7aab0a1edd028135888590f8e"
+    }
+  },
+  "0100D7C01F254000": {
+    "name": "DRAGON QUEST I & II HD-2D Remake",
+    "file": "0100D7C01F254000.jpg",
+    "source": "https://api.nlib.cc/nx/0100D7C01F254000/icon/512",
+    "kind": "cover"
+  },
+  "0100D9F01D474000": {
+    "name": "Rhythm Heaven Groove",
+    "file": "0100D9F01D474000.jpg",
+    "source": "https://api.nlib.cc/nx/0100D9F01D474000/icon/512",
+    "kind": "cover"
+  },
+  "0100DCA0064A6000": {
+    "name": "Luigi's Mansion 3",
+    "file": "0100DCA0064A6000.jpg",
+    "source": "https://api.nlib.cc/nx/0100DCA0064A6000/icon/512",
+    "kind": "cover"
+  },
+  "0100E44016C22000": {
+    "name": "Patrick's Parabox",
+    "file": "0100E44016C22000.jpg",
+    "source": "https://api.nlib.cc/nx/0100E44016C22000/icon/512",
+    "kind": "cover"
+  },
+  "0100E65002BB8000": {
+    "name": "Stardew Valley",
+    "file": "0100E65002BB8000.jpg",
+    "source": "https://api.nlib.cc/nx/0100E65002BB8000/icon/512",
+    "kind": "cover"
+  },
+  "0100E95004038000": {
+    "name": "Xenoblade Chronicles 2",
+    "file": "0100E95004038000.jpg",
+    "source": "https://api.nlib.cc/nx/0100E95004038000/icon/512",
+    "kind": "cover"
+  },
+  "0100EC9010258000": {
+    "name": "Streets of Rage 4",
+    "file": "0100EC9010258000.jpg",
+    "source": "https://api.nlib.cc/nx/0100EC9010258000/icon/512",
+    "kind": "cover"
+  },
+  "0100ECD018EBE000": {
+    "name": "Paper Mario: The Thousand-Year Door",
+    "file": "0100ECD018EBE000.jpg",
+    "source": "https://api.nlib.cc/nx/0100ECD018EBE000/icon/512",
+    "kind": "cover"
+  },
+  "0100F2C0115B6000": {
+    "name": "The Legend of Zelda: Tears of the Kingdom",
+    "file": "0100F2C0115B6000.jpg",
+    "source": "https://api.nlib.cc/nx/0100F2C0115B6000/icon/512",
+    "kind": "cover"
+  },
+  "0100F43008C44000": {
+    "name": "Pokémon Legends: Z-A",
+    "file": "0100F43008C44000.jpg",
+    "source": "https://api.nlib.cc/nx/0100F43008C44000/icon/512",
+    "kind": "cover"
+  },
+  "0100F5D01DA3A000": {
+    "name": "Brain Memory Training Academy",
+    "file": "0100F5D01DA3A000.jpg",
+    "source": "https://api.nlib.cc/nx/0100F5D01DA3A000/icon/512",
+    "kind": "cover"
+  },
+  "0100FD8022DAA000": {
+    "name": "Super Mario Galaxy 2",
+    "file": "0100FD8022DAA000.jpg",
+    "source": "https://api.nlib.cc/nx/0100FD8022DAA000/icon/512",
+    "kind": "cover"
+  },
+  "0100FF500E34A000": {
+    "name": "Xenoblade Chronicles: Definitive Edition",
+    "file": "0100FF500E34A000.jpg",
+    "source": "https://api.nlib.cc/nx/0100FF500E34A000/icon/512",
+    "kind": "cover"
+  },
+  "0400380020056000": {
+    "name": "Splatoon Raiders",
+    "file": "0400380020056000.jpg",
+    "source": "https://raw.githubusercontent.com/seedds/nxnative/65501fbbaf8526f7aab0a1edd028135888590f8e/docs/images/splatoon-raiders.jpg",
+    "kind": "screenshot",
+    "provenance": {
+      "repo": "https://github.com/seedds/nxnative",
+      "path": "docs/images/splatoon-raiders.jpg",
+      "commit": "65501fbbaf8526f7aab0a1edd028135888590f8e"
+    }
+  },
+  "040074A01BF12000": {
+    "name": "Donkey Kong Bananza",
+    "file": "040074A01BF12000.jpg",
+    "source": "https://raw.githubusercontent.com/seedds/nxnative/65501fbbaf8526f7aab0a1edd028135888590f8e/docs/images/donkey-kong-bananza.jpg",
+    "kind": "screenshot",
+    "provenance": {
+      "repo": "https://github.com/seedds/nxnative",
+      "path": "docs/images/donkey-kong-bananza.jpg",
+      "commit": "65501fbbaf8526f7aab0a1edd028135888590f8e"
+    }
+  },
+  "04007EF01F8AE000": {
+    "name": "Fire Emblem Fortune's Weave",
+    "file": "04007EF01F8AE000.jpg",
+    "source": "https://raw.githubusercontent.com/seedds/nxnative/65501fbbaf8526f7aab0a1edd028135888590f8e/docs/images/fire-emblem-fortunes-weave.jpg",
+    "kind": "screenshot",
+    "provenance": {
+      "repo": "https://github.com/seedds/nxnative",
+      "path": "docs/images/fire-emblem-fortunes-weave.jpg",
+      "commit": "65501fbbaf8526f7aab0a1edd028135888590f8e"
+    }
+  }
+}

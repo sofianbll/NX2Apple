@@ -1,12 +1,14 @@
 """Small local library manager. No network downloads, key values, or save operations."""
 import argparse
 import contextlib
+from decimal import Decimal, InvalidOperation
 import filecmp
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import plistlib
 import re
 import shutil
 import struct
@@ -22,6 +24,12 @@ ARCHIVES = {'.rar', '.zip', '.7z'}
 PARTIAL = ('.part', '.crdownload', '.download', '.aria2', '.tmp')
 TITLE = re.compile(r'\[([0-9a-fA-F]{16})\]')
 RESERVE = 10 * 2**30
+SLUG = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
+ENV = re.compile(r'DM_[A-Z0-9_]+')
+DECIMAL = re.compile(r'-?(?:\d+(?:\.\d*)?|\.\d+)')
+MAX_LAUNCHER = 256 * 1024
+MAX_INFO = 1024 * 1024
+MAX_ENV = 64 * 1024
 
 
 def read_json(path, default=None):
@@ -77,7 +85,7 @@ def games(root):
     result = []
     for path in (root / 'games').rglob('game.json'):
         game = read_json(path)
-        if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', game['slug']) or not re.fullmatch(r'[0-9A-F]{16}', game['title_id']):
+        if not SLUG.fullmatch(game['slug']) or not re.fullmatch(r'[0-9A-F]{16}', game['title_id']):
             raise ValueError('Identifiant de jeu invalide dans game.json')
         game['path'] = path.parent
         result.append(game)
@@ -433,13 +441,42 @@ def build(root, game, allow_untested=False):
         raise ValueError(f'Construction arrêtée : consulter logs/{game["slug"]}.jsonl et .stderr.log')
 
 
+def process_table():
+    """Return (pid, ppid, executable) once, or None when process state is unavailable."""
+    try:
+        result = subprocess.run(['/bin/ps', '-axo', 'pid=,ppid=,comm='], capture_output=True, text=True, timeout=5, check=True)
+        rows = []
+        for line in result.stdout.splitlines():
+            fields = line.strip().split(None, 2)
+            if len(fields) == 3:
+                rows.append((int(fields[0]), int(fields[1]), fields[2]))
+        return rows
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def runtime_for(root, game, processes):
+    if processes is None:
+        return {'state': 'unknown'}
+    macos = app_path(root, game) / 'Contents/MacOS'
+    launchers = {pid for pid, _, command in processes if command == str(macos / 'nxnative')}
+    if any(command == str(macos / 'dmhost') for _, _, command in processes):
+        return {'state': 'running'}
+    return {'state': 'launcher'} if launchers else {'state': 'stopped'}
+
+
+def runtime_state(root, game):
+    return runtime_for(root, game, process_table())
+
+
 def snapshot(root):
     profile = profiles(root)
     source = source_stamp(root)
+    processes = process_table()
     rows = []
     for game in games(root):
         state, reason = state_for(root, game, profile.get(game['title_id']), source)
-        rows.append({'name': game['name'], 'slug': game['slug'], 'title_id': game['title_id'], 'group': game.get('group'), 'edition': game.get('edition'), 'state': state, 'reason': reason, 'app': app_path(root, game).is_dir(), 'files': {kind: len(list((game['path'] / kind).glob('*'))) for kind in ('base', 'updates', 'dlc')}})
+        rows.append({'name': game['name'], 'slug': game['slug'], 'title_id': game['title_id'], 'group': game.get('group'), 'edition': game.get('edition'), 'state': state, 'reason': reason, 'runtime': runtime_for(root, game, processes), 'app': app_path(root, game).is_dir(), 'files': {kind: len(list((game['path'] / kind).glob('*'))) for kind in ('base', 'updates', 'dlc')}})
     pending = []
     receipts = read_json(root / '.build/import-receipts.json', {})
     for item in read_json(root / '.build/import-status.json', {}).get('pending', []):
@@ -465,6 +502,328 @@ def operation(root):
         yield
 
 
+class PlayError(ValueError):
+    """Business error whose message is safe to show; status is the HTTP code used by the dashboard."""
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
+def known_game(root, name):
+    if not isinstance(name, str) or not SLUG.fullmatch(name):
+        raise PlayError(400, 'Identifiant de jeu invalide')
+    game = next((g for g in games(root) if g['slug'] == name), None)
+    if not game:
+        raise PlayError(400, 'Jeu inconnu')
+    return game
+
+
+def checked_app(root, game):
+    app = app_path(root, game)
+    try:
+        valid = not app.is_symlink() and app.is_dir() and app.resolve().parent == (root / 'apps').resolve()
+    except OSError:
+        valid = False
+    if not valid:
+        raise PlayError(409, 'Application absente ou invalide')
+    return app
+
+
+def bundle_file(app, relative, limit, required=False):
+    """Read one allowlisted regular file without following a symlink out of the app."""
+    path = app
+    try:
+        for part in PurePosixPath(relative).parts:
+            path = path / part
+            if path.is_symlink():
+                raise PlayError(409, 'Bundle d’application invalide')
+        if not path.resolve().is_relative_to(app.resolve()) or not path.is_file():
+            raise FileNotFoundError
+        if path.stat().st_size > limit:
+            raise PlayError(409, 'Métadonnées d’application trop volumineuses')
+        data = path.read_bytes()
+    except FileNotFoundError:
+        if required:
+            raise PlayError(409, 'Métadonnées d’application absentes') from None
+        return None
+    except PlayError:
+        raise
+    except OSError:
+        raise PlayError(409, 'Métadonnées d’application illisibles') from None
+    if len(data) > limit:
+        raise PlayError(409, 'Métadonnées d’application trop volumineuses')
+    return data
+
+
+def decimal_value(value, string=False):
+    if isinstance(value, bool) or (string and not isinstance(value, str)) or (not string and not isinstance(value, (int, float))):
+        raise ValueError
+    if isinstance(value, str) and not DECIMAL.fullmatch(value):
+        raise ValueError
+    try:
+        result = Decimal(str(value))
+    except InvalidOperation:
+        raise ValueError from None
+    if not result.is_finite():
+        raise ValueError
+    return result
+
+
+def valid_setting_value(setting, value):
+    if not isinstance(value, str):
+        return False
+    if setting['kind'] == 'choice':
+        return value in {option[0] for option in setting['options']}
+    if setting['kind'] == 'toggle':
+        return value in (setting['on'], setting['off'])
+    try:
+        number = decimal_value(value, string=True)
+        low = decimal_value(setting['min'])
+        high = decimal_value(setting['max'])
+        step = decimal_value(setting['step'])
+        return low <= number <= high and (number - low) % step == 0
+    except (ValueError, InvalidOperation):
+        return False
+
+
+def launcher_definitions(data, title_id):
+    """Validate schema 1 and copy only fields understood by this frontend."""
+    schema = data.get('schema', 1) if isinstance(data, dict) else None
+    if not isinstance(data, dict) or isinstance(schema, bool) or not isinstance(schema, int) or schema != 1 or data.get('game') != title_id or not isinstance(data.get('settings'), list):
+        raise ValueError
+    result = []
+    seen = set()
+    for source in data['settings']:
+        if not isinstance(source, dict):
+            raise ValueError
+        setting = {}
+        for key in ('env', 'kind', 'section', 'label', 'note', 'default'):
+            if not isinstance(source.get(key), str):
+                raise ValueError
+            setting[key] = source[key]
+        if not ENV.fullmatch(setting['env']) or setting['env'] in seen or setting['kind'] not in ('choice', 'range', 'toggle'):
+            raise ValueError
+        seen.add(setting['env'])
+        if setting['kind'] == 'choice':
+            options = source.get('options')
+            if not isinstance(options, list) or not options:
+                raise ValueError
+            setting['options'] = []
+            for option in options:
+                if not isinstance(option, list) or len(option) != 2 or not all(isinstance(item, str) for item in option):
+                    raise ValueError
+                setting['options'].append(option.copy())
+            if len({option[0] for option in setting['options']}) != len(setting['options']):
+                raise ValueError
+        elif setting['kind'] == 'range':
+            for key in ('min', 'max', 'step'):
+                setting[key] = source.get(key)
+                decimal_value(setting[key])
+            if decimal_value(setting['min']) > decimal_value(setting['max']) or decimal_value(setting['step']) <= 0:
+                raise ValueError
+        else:
+            for key in ('on', 'off'):
+                if not isinstance(source.get(key), str):
+                    raise ValueError
+                setting[key] = source[key]
+            if setting['on'] == setting['off']:
+                raise ValueError
+        if not valid_setting_value(setting, setting['default']):
+            raise ValueError
+        if 'base' in source:
+            base = source['base']
+            if not isinstance(base, dict) or set(('docked', 'handheld')) - set(base):
+                raise ValueError
+            setting['base'] = {}
+            for key in ('docked', 'handheld'):
+                size = base[key]
+                if not isinstance(size, list) or len(size) != 2 or any(isinstance(item, bool) or not isinstance(item, int) for item in size):
+                    raise ValueError
+                setting['base'][key] = size.copy()
+        if 'level' in source:
+            if source['level'] != 'basic':
+                raise ValueError
+            setting['level'] = 'basic'
+        if 'needs' in source:
+            if not isinstance(source['needs'], str) or not re.fullmatch(r'DM_[A-Z0-9_]+=[^;=]+', source['needs']):
+                raise ValueError
+            setting['needs'] = source['needs']
+        result.append(setting)
+    return result
+
+
+def check_native_rules(settings, rules):
+    if not isinstance(rules, list):
+        raise ValueError
+    indexed = {}
+    for rule in rules:
+        if not isinstance(rule, dict) or not isinstance(rule.get('env'), str) or rule['env'] in indexed:
+            raise ValueError
+        indexed[rule['env']] = rule
+    for setting in settings:
+        rule = indexed.get(setting['env'])
+        if rule is None:
+            raise ValueError
+        if setting['kind'] == 'range':
+            if decimal_value(rule.get('min')) != decimal_value(setting['min']) or decimal_value(rule.get('max')) != decimal_value(setting['max']):
+                raise ValueError
+        elif rule.get('values') != ([option[0] for option in setting['options']] if setting['kind'] == 'choice' else [setting['on'], setting['off']]):
+            raise ValueError
+
+
+def settings_bundle(root, game):
+    app = checked_app(root, game)
+    try:
+        info = plistlib.loads(bundle_file(app, 'Contents/Info.plist', MAX_INFO, required=True))
+    except (ValueError, plistlib.InvalidFileException):
+        raise PlayError(409, 'Informations d’application invalides') from None
+    domain = f'org.nxnative.{game["title_id"].lower()}'
+    if not isinstance(info, dict) or info.get('DMTitleID') != game['title_id'] or info.get('CFBundleIdentifier') != domain:
+        raise PlayError(409, 'Identité d’application invalide')
+    raw = bundle_file(app, 'Contents/Resources/dm/launcher.json', MAX_LAUNCHER)
+    if raw is None:
+        return app, domain, []
+    try:
+        settings = launcher_definitions(json.loads(raw), game['title_id'])
+        check_native_rules(settings, info.get('DMSettings'))
+    except (ValueError, TypeError, InvalidOperation, json.JSONDecodeError):
+        raise PlayError(409, 'Schéma de réglages invalide') from None
+    return app, domain, settings
+
+
+def env_file(path, wanted):
+    try:
+        if path.is_symlink():
+            raise PlayError(409, 'Fichier env.txt invalide')
+        if not path.is_file():
+            return {}
+        if path.stat().st_size > MAX_ENV:
+            raise PlayError(409, 'Fichier env.txt trop volumineux')
+        text = path.read_text()
+    except PlayError:
+        raise
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeError):
+        raise PlayError(409, 'Fichier env.txt illisible') from None
+    found = {}
+    for line in text.splitlines():
+        line = line.strip(' \t\r\n')
+        key, separator, value = line.partition('=')
+        key = key.rstrip(' \t')
+        if separator and not line.startswith('#') and key in wanted and key not in found:
+            found[key] = value
+    return found
+
+
+def defaults(*arguments):
+    return subprocess.run(['/usr/bin/defaults', *arguments], capture_output=True, text=True, timeout=10)
+
+
+def saved_value(domain, setting):
+    try:
+        result = defaults('read', domain, f'launcher.{setting["env"]}')
+    except (OSError, subprocess.SubprocessError):
+        raise PlayError(502, 'Lecture des réglages impossible ou trop longue') from None
+    if result.returncode == 1:
+        return setting['default']
+    if result.returncode:
+        raise PlayError(502, 'Lecture des réglages impossible')
+    value = result.stdout.removesuffix('\n')
+    if not valid_setting_value(setting, value):
+        return setting['default']
+    try:
+        value_type = defaults('read-type', domain, f'launcher.{setting["env"]}')
+    except (OSError, subprocess.SubprocessError):
+        raise PlayError(502, 'Lecture des réglages impossible ou trop longue') from None
+    if value_type.returncode not in (0, 1):
+        raise PlayError(502, 'Lecture des réglages impossible')
+    if value_type.returncode or value_type.stdout.strip() != 'Type is string':
+        return setting['default']
+    return value
+
+
+def settings_response(root, game, processes=None):
+    app, domain, settings = settings_bundle(root, game)
+    wanted = {setting['env'] for setting in settings} | {'DM_SAVED_CHOICES'}
+    overrides = {key: (os.environ[key], 'environnement de lancement') for key in wanted if key in os.environ}
+    for path, origin in ((Path.home() / 'Library/Application Support/nxnative' / game['title_id'] / 'env.txt', 'env.txt utilisateur'), (app / 'Contents/Resources/dm/env.txt', 'env.txt du bundle')):
+        for key, value in env_file(path, wanted).items():
+            overrides.setdefault(key, (value, origin))
+    disabled = overrides.get('DM_SAVED_CHOICES', (None,))[0] == '0'
+    rows = []
+    for setting in settings:
+        row = dict(setting, value=saved_value(domain, setting), locked=disabled or setting['env'] in overrides)
+        if disabled:
+            row['lock_reason'] = 'DM_SAVED_CHOICES=0 : les choix enregistrés sont ignorés'
+        elif setting['env'] in overrides:
+            row['lock_reason'] = f'Variable imposée par {overrides[setting["env"]][1]} ; le choix enregistré n’est pas effectif'
+        rows.append(row)
+    return {'slug': game['slug'], 'settings': rows, 'runtime': runtime_for(root, game, process_table() if processes is None else processes)}
+
+
+def dashboard_settings(root, name):
+    return settings_response(root, known_game(root, name))
+
+
+def dashboard_save_settings(root, name, values):
+    game = known_game(root, name)
+    if not isinstance(values, dict):
+        raise PlayError(400, 'Valeurs de réglages invalides')
+    try:
+        with operation(root):
+            response = settings_response(root, game)
+            if response['runtime']['state'] != 'stopped':
+                raise PlayError(409, 'Quitter le jeu et son launcher avant de modifier les réglages ; état inconnu = refus')
+            offered = {setting['env']: setting for setting in response['settings']}
+            if any(not isinstance(key, str) or key not in offered or not valid_setting_value(offered[key], value) for key, value in values.items()):
+                raise PlayError(400, 'Valeur absente des choix offerts ou invalide')
+            locked = [key for key in values if offered[key]['locked']]
+            if locked:
+                raise PlayError(409, 'Un réglage verrouillé par l’environnement ne peut pas être modifié')
+            domain = f'org.nxnative.{game["title_id"].lower()}'
+            commands = [('delete', domain, f'launcher.{key}') if value == offered[key]['default'] else ('write', domain, f'launcher.{key}', '-string', value) for key, value in values.items()]
+            for index, command in enumerate(commands):
+                try:
+                    result = defaults(*command)
+                    failed = result.returncode and not (command[0] == 'delete' and result.returncode == 1)
+                except (OSError, subprocess.SubprocessError):
+                    failed = True
+                if failed:
+                    message = 'Écriture partielle : certains réglages ont changé, rechargez les valeurs' if index else 'Enregistrement des réglages impossible ou trop long'
+                    raise PlayError(502, message)
+    except PlayError:
+        raise
+    except ValueError:
+        raise PlayError(409, 'Un import, nettoyage ou build est déjà en cours') from None
+
+
+def open_existing(root, game, show_launcher=True, **options):
+    """Open an already built app, never build. The app must be a real directory directly under apps/."""
+    app = checked_app(root, game)
+    command = ['open', str(app)] if show_launcher else ['open', str(app), '--args', '--no-launcher']
+    subprocess.run(command, check=True, **options)
+
+
+def dashboard_play(root, name, show_launcher=True, timeout=10):
+    game = known_game(root, name)
+    if not isinstance(show_launcher, bool):
+        raise PlayError(400, 'Option du launcher invalide')
+    try:
+        # The lock is held while opening so a build or import cannot replace the app meanwhile.
+        with operation(root):
+            if runtime_state(root, game)['state'] != 'stopped':
+                raise PlayError(409, 'Jeu déjà ouvert ou état du processus inconnu')
+            open_existing(root, game, show_launcher=show_launcher, timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except PlayError:
+        raise
+    except ValueError:
+        raise PlayError(409, 'Un import, nettoyage ou build est déjà en cours') from None
+    except (OSError, subprocess.SubprocessError):
+        # No automatic retry: a second open could start a second instance.
+        raise PlayError(502, 'Lancement impossible ou trop long') from None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['import', 'list', 'build', 'all', 'run', 'monitor', 'clean'])
@@ -486,7 +845,7 @@ def main():
                     if row['slug'] == active['slug'] and state == 'running':
                         row.update(state='running', reason='Construction en cours')
             return data
-        serve(status)
+        serve(status, lambda name, show_launcher=True: dashboard_play(ROOT, name, show_launcher), lambda name: dashboard_settings(ROOT, name), lambda name, values: dashboard_save_settings(ROOT, name, values))
         return
     if action == 'list':
         for row in snapshot(ROOT)['games']:
@@ -514,7 +873,7 @@ def main():
                 print('Caches effacés ; jeu, application et sauvegardes conservés')
             elif action == 'run' and app_path(ROOT, game).is_dir():
                 print(f'OUVERTURE  {game["name"]} — application existante, sans reconstruction', flush=True)
-                subprocess.run(['open', str(app_path(ROOT, game))], check=True)
+                open_existing(ROOT, game)
             else:
                 build(ROOT, game, allow_untested=os.environ.get('EXPERIMENTAL') == '1')
                 if action == 'run':

@@ -1,21 +1,40 @@
-/* THROWAWAY prototype design system shared by Cinéma and Console. Values come from the validated Cinéma blocks 1-2. */
+/* Shared dashboard and prototype design system. Tokens come from the validated Cinéma blocks 1-2. */
 :root{
-  --nx-base:#050d11;--nx-rail:#030a0e;--nx-surface:#0b1418;--nx-raised:#10181c;
-  --nx-text:#f1f6f1;--nx-text-soft:#e2e8e2;--nx-muted:#bcc8c3;--nx-icon:#bac8c8;
-  --nx-green:#42c536;--nx-green-hover:#4ad53d;--nx-green-bright:#5bdf49;--nx-green-deep:#153b1a;--nx-focus:#4acb40;
-  --nx-border:#728f8d40;--nx-border-hover:#88b187;--nx-hairline:#ffffff12;
+  --nx-base:#080615;--nx-rail:#05040c;--nx-surface:#110d22;--nx-raised:#1b1530;
+  --nx-text:#f5f0ff;--nx-text-soft:#e0d7f1;--nx-muted:#b6accb;--nx-icon:#baafd0;
+  /* Legacy --nx-green* names are kept because components still reference them; the values are now the violet accent. */
+  --nx-green:#7c3aed;--nx-green-hover:#8b5cf6;--nx-green-bright:#c4a7ff;--nx-green-deep:#2b1648;--nx-focus:#b794ff;
+  --nx-border:#b79cff33;--nx-border-hover:#a78bdb;--nx-hairline:#ffffff12;
   --nx-yellow:#ffc400;
   --nx-radius-tile:16px;--nx-radius-control:12px;--nx-radius-pill:11px;
-  --nx-tile-ratio:285/272; /* one ratio for every cover, both views */
+  --nx-tile-ratio:1/1; /* one square ratio for every cover, both views (user decision, replaces the 285/272 mockup ratio) */
   --nx-ease:cubic-bezier(.2,.8,.2,1);--nx-spring:cubic-bezier(.34,1.4,.64,1);
   --nx-font:"Helvetica Neue",Arial,sans-serif;
 }
-/* Animated background: slow drifting green/teal light over the base. */
-.nx-bg{position:absolute;inset:0;overflow:hidden;background:var(--nx-base);z-index:0;pointer-events:none}
-.nx-bg::before,.nx-bg::after{content:"";position:absolute;width:70%;aspect-ratio:1;border-radius:50%;filter:blur(90px);opacity:.28;animation:nx-drift 26s var(--nx-ease) infinite alternate}
-.nx-bg::before{left:-15%;top:-30%;background:radial-gradient(circle,#1d5a32,transparent 65%)}
-.nx-bg::after{right:-20%;bottom:-40%;background:radial-gradient(circle,#0f4650,transparent 65%);animation-delay:-13s}
-@keyframes nx-drift{to{transform:translate(12%,10%) scale(1.15)}}
+/* Night-sky background: static CSS stars (two offset tiles so the repeat is not visible),
+   ::before = indigo/violet/magenta nebula drifting very slowly, ::after = one pulsar halo breathing slowly. */
+.nx-bg{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none;background:
+  radial-gradient(1px 1px at 23px 31px,#f5f0ffcc,transparent) 0 0/190px 190px,
+  radial-gradient(1px 1px at 131px 77px,#e0d7f199,transparent) 0 0/190px 190px,
+  radial-gradient(1.5px 1.5px at 74px 143px,#ffffffcc,transparent) 0 0/190px 190px,
+  radial-gradient(1px 1px at 167px 12px,#c4a7ff99,transparent) 0 0/190px 190px,
+  radial-gradient(1px 1px at 41px 211px,#f5f0ff99,transparent) 0 0/271px 293px,
+  radial-gradient(1.5px 1.5px at 203px 133px,#e0d7f1b3,transparent) 0 0/271px 293px,
+  radial-gradient(1px 1px at 111px 267px,#c4a7ff80,transparent) 0 0/271px 293px,
+  var(--nx-base)}
+.nx-bg::before,.nx-bg::after{content:"";position:absolute}
+/* Soft focus (blur ~20-35px) only on these two decorative layers: never on UI, covers or text. ::before is oversized (inset -20%) so the blurred edges stay outside .nx-bg's clip, and the pulsar gradients fade to transparent well inside their box. */
+.nx-bg::before{inset:-20%;opacity:.65;filter:blur(30px);animation:nx-drift 48s ease-in-out infinite alternate;background:
+  radial-gradient(40% 35% at 25% 22%,#4c2bb8b3,transparent 70%),
+  radial-gradient(34% 30% at 78% 80%,#a21caf73,transparent 70%),
+  radial-gradient(30% 26% at 72% 28%,#2b3fb866,transparent 70%)}
+/* Pulsar: tiny core, thin ring and wide halo in one layer, top right behind the content; opacity swells over ~20 s, never a flash. */
+.nx-bg::after{right:6%;top:6%;width:min(46vw,520px);aspect-ratio:1;opacity:.6;filter:blur(22px);animation:nx-pulsar 20s ease-in-out infinite alternate;background:
+  radial-gradient(circle,#fff 0,#e9dcff 3px,#b794ff80 8px,transparent 14px),
+  radial-gradient(circle,transparent 24%,#b794ff66 29%,transparent 35%),
+  radial-gradient(circle,#7c3aed4d,transparent 62%)}
+@keyframes nx-drift{to{transform:translate(4%,3%) scale(1.06)}}
+@keyframes nx-pulsar{to{opacity:.95;transform:scale(1.08)}}
 
 /* Tile: same component in both views. */
 .nx-tile{position:relative;aspect-ratio:var(--nx-tile-ratio);border:1px solid var(--nx-border);border-radius:var(--nx-radius-tile);overflow:hidden;padding:0;background:var(--nx-surface);color:var(--nx-text);font:inherit;cursor:pointer;text-align:left;transition:transform .35s var(--nx-spring),border-color .2s,box-shadow .35s var(--nx-ease)}
@@ -41,7 +60,7 @@
 .nx-primary:hover{background:var(--nx-green-hover);transform:translateY(-1px)}
 .nx-primary:active{transform:scale(.97)}
 .nx-secondary{height:38px;padding:0 15px;display:inline-flex;align-items:center;gap:9px;background:var(--nx-raised);color:var(--nx-text);border:1px solid #ffffff08;border-radius:var(--nx-radius-pill);font:1rem var(--nx-font);cursor:pointer;transition:background .2s,border-color .2s}
-.nx-secondary:hover{background:#16222a;border-color:#ffffff1a}
+.nx-secondary:hover{background:#271d44;border-color:#b79cff33}
 
 /* Nav icon button: rail (Cinéma) and dock (Console). */
 .nx-nav{border:0;background:none;color:var(--nx-icon);border-radius:11px;display:grid;place-items:center;cursor:pointer;transition:background .2s,color .2s,transform .2s var(--nx-spring)}

@@ -85,14 +85,6 @@
 
     <section class="view" aria-labelledby="console-title">
       <h2 id="console-title">Console</h2>
-      <div class="dock-scroll">
-        <nx-dock>
-          <nx-nav icon="library" label="Bibliothèque" active></nx-nav>
-          <nx-nav icon="catalog" label="Catalogue"></nx-nav>
-          <nx-nav icon="builds" label="Compilations"></nx-nav>
-          <nx-nav icon="settings" label="Réglages"></nx-nav>
-        </nx-dock>
-      </div>
       <div class="console-layout">
         <div class="carousel" aria-label="Carousel des mêmes pochettes fictives">
           <nx-tile src="./cinema-block-2-assets/zelda.png" game="Zelda : Link’s Awakening" status="test" label="À tester" selected></nx-tile>
@@ -101,6 +93,14 @@
           <nx-tile src="./cinema-block-2-assets/n64.png" game="Nintendo 64 Classics" status="compiling" label="Compilation" value="12"></nx-tile>
         </div>
         <nx-build-card name="Mario Kart — shaders" done="1670" total="29651"></nx-build-card>
+      </div>
+      <div class="dock-scroll">
+        <nx-dock>
+          <nx-nav icon="library" label="Bibliothèque" active></nx-nav>
+          <nx-nav icon="catalog" label="Catalogue"></nx-nav>
+          <nx-nav icon="builds" label="Compilations"></nx-nav>
+          <nx-nav icon="settings" label="Réglages"></nx-nav>
+        </nx-dock>
       </div>
     </section>
 

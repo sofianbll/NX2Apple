@@ -15,6 +15,15 @@ export function formatBuildProgress(done, total) {
   };
 }
 
+// Current-stage fraction (0..1) -> whole percent, or null when blank/invalid/out of range.
+export function formatStageProgress(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const fraction = Number(value);
+  if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) return null;
+  // Epsilon guards float noise (0.29 * 100 = 28.999…); floor keeps an unfinished stage below 100 %.
+  return fraction === 1 ? 100 : Math.min(99, Math.floor(fraction * 100 + 1e-9));
+}
+
 const BASE_CSS = `
   *,*::before,*::after{box-sizing:border-box}
   button{font:inherit}
@@ -91,14 +100,14 @@ class NxPill extends NxElement {
 const TILE_CSS = `
   :host{display:block;min-width:0}
   :host([selected]){z-index:1}
-  .tile{position:relative;display:block;width:100%;aspect-ratio:var(--nx-tile-ratio);border:1px solid var(--nx-border);border-radius:var(--nx-radius-tile);overflow:hidden;padding:0;background:var(--nx-surface);color:var(--nx-text);cursor:pointer;text-align:left;transition:transform .35s var(--nx-spring),border-color .2s,box-shadow .35s var(--nx-ease)}
+  .tile{position:relative;display:block;width:100%;aspect-ratio:var(--nx-tile-ratio);border:1px solid var(--nx-border);border-radius:var(--nx-radius-tile);overflow:hidden;padding:0;background:var(--nx-surface);color:var(--nx-text);cursor:pointer;text-align:left;transition:border-color .2s,box-shadow .35s var(--nx-ease)}
   img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}
   nx-pill{position:absolute;left:4.56%;bottom:5.15%;z-index:1}
-  .tile:hover{border-color:var(--nx-border-hover);transform:translateY(-4px) scale(1.02)}
-  .tile:focus-visible{outline:2px solid var(--nx-focus);outline-offset:4px}
-  .tile[aria-pressed=true]{outline:3px solid var(--nx-focus);outline-offset:3px;box-shadow:0 18px 40px #0009}
+  .tile:hover{border-color:var(--nx-border-hover)}
+  .tile:focus-visible,.tile[aria-pressed=true]{border-color:var(--nx-focus);outline:2px solid var(--nx-focus);outline-offset:0}
+  .tile[aria-pressed=true]{box-shadow:0 18px 40px #0009}
   .tile:active{transform:scale(.98)}
-  @media(prefers-reduced-motion:reduce){.tile:hover,.tile:active{transform:none}}
+  @media(prefers-reduced-motion:reduce){.tile:active{transform:none}}
 `;
 
 class NxTile extends NxElement {
@@ -163,11 +172,12 @@ const NAV_CSS = `
   button:active{transform:scale(.94)}
   button:focus-visible{outline:2px solid var(--nx-focus);outline-offset:4px}
   button[aria-pressed=true]{color:var(--nx-green-bright);background:var(--nx-green-deep)}
-  :host([data-dock]){width:64px;height:64px}
+  :host([data-dock]){width:56px;height:56px}
   :host([data-dock]) button{border-radius:50%}
-  :host([data-dock]) .label{position:absolute;top:73px;left:50%;display:block;width:130px;transform:translateX(-50%);color:var(--nx-text-soft);font-family:var(--nx-font);font-size:15px;line-height:20px;text-align:center;white-space:nowrap}
+  :host([data-dock]) .label{position:absolute;top:62px;left:50%;display:block;width:120px;transform:translateX(-50%);color:var(--nx-text-soft);font-family:var(--nx-font);font-size:14px;line-height:18px;text-align:center;white-space:nowrap}
   :host([data-dock]) button[aria-pressed=true] .label{color:var(--nx-green-bright)}
-  :host([data-dock]) button[aria-pressed=true]::after{content:"";position:absolute;top:102px;left:50%;width:6px;height:6px;transform:translateX(-50%);border-radius:50%;background:var(--nx-green-bright)}
+  :host([data-dock]) button[aria-pressed=true]::after{content:"";position:absolute;top:86px;left:50%;width:5px;height:5px;transform:translateX(-50%);border-radius:50%;background:var(--nx-green-bright)}
+  @media(max-width:480px){:host([data-dock]) .label{width:84px;font-size:12px}}
   @media(prefers-reduced-motion:reduce){button:active{transform:none}}
 `;
 
@@ -207,8 +217,8 @@ class NxNav extends NxElement {
 }
 
 const DOCK_CSS = `
-  :host{display:block;width:max-content}
-  nav{display:grid;grid-template-columns:repeat(4,64px);justify-content:space-between;width:620px;height:137px;padding:20px 70px 0;border:1px solid var(--nx-hairline);border-radius:999px;background:#0b1418cc;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 12px 40px #0002}
+  :host{display:block;width:max-content;max-width:100%}
+  nav{display:grid;grid-template-columns:repeat(4,56px);justify-content:space-evenly;width:540px;max-width:100%;height:116px;padding:12px 0 0;border:1px solid var(--nx-hairline);border-radius:999px;background:#0b1418cc;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 12px 40px #0002}
 `;
 
 class NxDock extends NxElement {
@@ -262,7 +272,7 @@ const BUILD_CSS = `
 `;
 
 class NxBuildCard extends NxElement {
-  static observedAttributes = ['name', 'done', 'total'];
+  static observedAttributes = ['name', 'done', 'total', 'progress'];
 
   constructor() {
     super(BUILD_CSS);
@@ -279,14 +289,16 @@ class NxBuildCard extends NxElement {
     this.percent = this.shadowRoot.querySelector('.percent');
     this.name = this.shadowRoot.querySelector('.name');
     this.count = this.shadowRoot.querySelector('.count');
+    this.steps = this.shadowRoot.querySelector('.steps');
     this.shadowRoot.querySelector('.details').addEventListener('click', () => {
+      // `progress` attribute present = real current stage; absent = legacy done/total counter.
+      const detail = this.hasAttribute('progress')
+        ? { progress: formatStageProgress(this.getAttribute('progress')) }
+        : formatBuildProgress(this.getAttribute('done'), this.getAttribute('total'));
       this.dispatchEvent(new CustomEvent('nx-details', {
         bubbles: true,
         composed: true,
-        detail: {
-          name: this.getAttribute('name') || '',
-          ...formatBuildProgress(this.getAttribute('done'), this.getAttribute('total')),
-        },
+        detail: { name: this.getAttribute('name') || '', ...detail },
       }));
     });
   }
@@ -295,8 +307,28 @@ class NxBuildCard extends NxElement {
   attributeChangedCallback() { this.render(); }
 
   render() {
-    const progress = formatBuildProgress(this.getAttribute('done'), this.getAttribute('total'));
     this.name.textContent = this.getAttribute('name') || '';
+    if (this.hasAttribute('progress')) {
+      const stage = formatStageProgress(this.getAttribute('progress'));
+      const known = stage !== null;
+      this.count.hidden = true;
+      this.steps.textContent = known ? 'Étape courante' : 'Progression non disponible';
+      this.percent.textContent = known ? `${stage} %` : '—';
+      this.ring.style.background = known
+        ? `conic-gradient(var(--nx-green) 0 ${stage}%, #1f2a2c ${stage}% 100%)`
+        : '#1f2a2c';
+      if (known) {
+        this.ring.setAttribute('aria-valuenow', String(stage));
+        this.ring.setAttribute('aria-valuetext', `${stage} %`);
+      } else {
+        this.ring.removeAttribute('aria-valuenow');
+        this.ring.setAttribute('aria-valuetext', 'Progression non disponible');
+      }
+      return;
+    }
+    const progress = formatBuildProgress(this.getAttribute('done'), this.getAttribute('total'));
+    this.count.hidden = false;
+    this.steps.textContent = 'Étapes terminées';
     this.count.textContent = progress.count;
     this.percent.textContent = `${progress.percent} %`;
     this.ring.style.background = `conic-gradient(var(--nx-green) 0 ${progress.percent}%, #1f2a2c ${progress.percent}% 100%)`;

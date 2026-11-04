@@ -13,3 +13,4 @@ import list build all run monitor clean:
 test:
 	@"$(PYTHON)" -m unittest discover -s "$(ROOT)/tools/tests" -v
 	@cd "$(ROOT)/tools/build-monitor" && "$(PYTHON)" -m unittest -v test_monitor
+	@if command -v node >/dev/null 2>&1; then cd "$(ROOT)/tools/build-monitor" && node --test test_components.cjs; fi

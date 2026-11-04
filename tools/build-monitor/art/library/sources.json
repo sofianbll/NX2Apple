@@ -1,0 +1,58 @@
+{
+  "0100E65002BB8000": {
+    "name": "Stardew Valley",
+    "file": "art/catalog/0100E65002BB8000.jpg",
+    "route": "/art/catalog/0100E65002BB8000.jpg",
+    "source": "https://api.nlib.cc/nx/0100E65002BB8000/icon/512",
+    "kind": "cover",
+    "origin": "reused from art/catalog"
+  },
+  "01006BB00C6F0000": {
+    "name": "The Legend of Zelda: Link's Awakening",
+    "file": "art/catalog/01006BB00C6F0000.jpg",
+    "route": "/art/catalog/01006BB00C6F0000.jpg",
+    "source": "https://api.nlib.cc/nx/01006BB00C6F0000/icon/512",
+    "kind": "cover",
+    "origin": "reused from art/catalog"
+  },
+  "0100152000022000": {
+    "name": "Mario Kart 8 Deluxe",
+    "file": "art/catalog/0100152000022000.jpg",
+    "route": "/art/catalog/0100152000022000.jpg",
+    "source": "https://api.nlib.cc/nx/0100152000022000/icon/512",
+    "kind": "cover",
+    "origin": "reused from art/catalog"
+  },
+  "01004B3023412000": {
+    "name": "Pokémon FireRed Version (French)",
+    "file": "art/library/01004B3023412000.jpg",
+    "route": "/art/library/01004B3023412000.jpg",
+    "source": "https://api.nlib.cc/nx/01004B3023412000/icon/512",
+    "kind": "cover",
+    "origin": "downloaded"
+  },
+  "0100F43008C44000": {
+    "name": "Pokémon Legends: Z-A",
+    "file": "art/catalog/0100F43008C44000.jpg",
+    "route": "/art/catalog/0100F43008C44000.jpg",
+    "source": "https://api.nlib.cc/nx/0100F43008C44000/icon/512",
+    "kind": "cover",
+    "origin": "reused from art/catalog"
+  },
+  "010018E011D92000": {
+    "name": "Pokémon Shining Pearl",
+    "file": "art/library/010018E011D92000.jpg",
+    "route": "/art/library/010018E011D92000.jpg",
+    "source": "https://api.nlib.cc/nx/010018E011D92000/icon/512",
+    "kind": "cover",
+    "origin": "downloaded"
+  },
+  "0100C9A00ECE6000": {
+    "name": "Nintendo 64 - Nintendo Classics",
+    "file": "art/library/0100C9A00ECE6000.jpg",
+    "route": "/art/library/0100C9A00ECE6000.jpg",
+    "source": "https://api.nlib.cc/nx/0100C9A00ECE6000/icon/512",
+    "kind": "cover",
+    "origin": "downloaded"
+  }
+}

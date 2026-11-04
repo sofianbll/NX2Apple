@@ -133,8 +133,9 @@ make test                  # Synthetic importer, incrementality and progress che
 
 ## Live build monitor
 
-`make monitor` starts the read-only library dashboard. It listens only on
-`127.0.0.1:8767`, exposes no filesystem or keys, and refreshes every two seconds.
+`make monitor` starts the library dashboard (v0.1.0, Cinéma view). It listens only on
+`127.0.0.1:8767` on this Mac (no Windows support, no local-network exposure),
+exposes no filesystem or keys, and refreshes every two seconds.
 Leave it running in one terminal and run builds/imports in another:
 
 ```sh
@@ -147,23 +148,64 @@ ETA describes the current stage only; there is no fabricated total countdown.
 Ctrl+C stops the dashboard without stopping a build. The old single-log monitor
 invocation still works, but is no longer necessary for everyday use.
 
-The dashboard is a dark, cover-based library: search, filter available apps or
-games needing preparation, and click a cover for files, missing requirements and
-the appropriate Make command. FireRed remains one tile with an edition selector.
-A “Catalogue” tab lists the engine’s referenced profiles (regional variants count
-separately); “Dans ta bibliothèque” means that Title ID’s files are present, not
-that a Mac app is built or tested.
+The dashboard is a dark, cover-based library with a cosmic violet theme (night,
+nebula, pulsar; decorative only): search, filter available apps or games needing
+preparation. Clicking a cover selects it; the **Détails** button shows files,
+missing requirements and the appropriate Make command. FireRed remains one tile
+with an edition selector.
+The “Catalogue” tab is a visual cover grid, the same grid as the library (not a
+table), listing the engine’s referenced profiles (regional variants count
+separately). Search, property filters and read-only profile sheets are available;
+“Dans ta bibliothèque” means that Title ID’s files are present, not that a Mac
+app is built or tested.
 Search, filters and selected editions are retained locally in the browser.
-Buttons copy commands; they do not launch games, builds or imports. A built app
-is not labelled gameplay-verified unless that build has been confirmed.
+Clicking a tile selects it and syncs the hero; the separate **Détails** button
+opens the details. Selecting never launches anything. The hero **Play** button
+and the Détails/status column are aligned (79 px on desktop) and the layout is
+responsive on mobile. The explicit **Jouer** button calls same-origin `POST /play` with the exact
+game slug to open an app that is already built. It never builds, imports or
+cleans; a missing app returns an error. Other buttons copy commands. `make run`
+on the command line is unchanged. A built app is not labelled gameplay-verified
+unless that build has been confirmed.
 
-The Cinéma / Console switch uses the same game cards, status badges, catalogue
-and game details. Cinéma shows the large artwork banner; Console uses a square
-tile carousel and a bottom dock. The choice is retained locally and can also be
-set with `?ambiance=cinema` or `?ambiance=console`. In Console, focus a game tile
-and use arrow keys to select another; Enter opens its details. The compact build
-card reuses the Constructions panel; its percentage describes only the current
-stage, never the entire build.
+Runtime is separate from build progress: the dashboard distinguishes a native
+settings menu (`nxnative`) from its game's engine (`dmhost`) by exact bundle
+executable paths. An open process is not a gameplay or rendering check. When
+runtime cannot be read, launching and settings writes are refused rather than
+assuming the app is closed.
+
+The library details sheet reads only the settings that the built app actually
+offers in `launcher.json`, checked against `Info.plist`'s `DMSettings`. It shows
+saved valid choices or tested defaults, not arbitrary environment switches.
+**Enregistrer pour le prochain lancement** writes only changed, unlocked choices
+to the app's native `launcher.<VAR>` preferences; selecting a tested default
+removes that preference. Finder and the app's own menu use the same choices.
+No preference changes on loading, selecting or polling. Settings are unavailable
+while a game/menu or managed operation is active. Environment overrides lock
+the corresponding controls: the saved value shown is then not the effective
+override. A failed multi-setting save can be partial; reload before retrying.
+
+**Autoriser le menu natif au lancement** is separate: an explicit per-title
+choice saved only in this browser (`nxnative-launch-menu`). Turning it off adds
+`--no-launcher` to this dashboard's next launch, without changing Finder, bundles
+or native preferences. Leaving it on permits the app's normal menu; it cannot
+override the app's own “Show this window at launch” choice. Hold Option at launch
+to recover a menu hidden there. The Mac performance counter is **HUD Metal**,
+only when offered by the app; the dashboard does not measure live FPS itself.
+
+Download links: you may paste an HTTPS Drive/download link per Title ID. It is
+stored only in this browser’s `localStorage` (key `nxnative-download-links`), with
+no backend, Git or fetch involved. It is opened only by an explicit click on
+**open**; deleting the field empties it. It is not shared with another browser,
+nor between the `127.0.0.1` and `localhost` origins.
+
+v0.1.0 ships the **Cinéma** view only, built from the shared Web Components
+over the live `/status` and `/catalog` data. The server serves the components at
+`/nx-components.js` and the stylesheet at `/nx-shared.css` (mapped from
+`protos/nx-shared.css`). Its percentage describes only the current build stage,
+never the entire build. The **Console** view (square-tile carousel, 540×116 dock)
+is planned for v0.2; its prototypes are kept in `tools/build-monitor/protos/`
+and are not wired to the dashboard.
 
 For long jobs, keep the build queue and dashboard in the detached `nxnative`
 tmux session (`builds` and `dashboard` windows), rather than agent-owned
@@ -171,10 +213,22 @@ background commands. Check for an existing process before starting another.
 This survives a disconnected agent, not a reboot of the Mac. Preserve `.build`
 shader caches: rebuilding them may take hours.
 
-Artwork is stored in `tools/build-monitor/art/`, with official source URLs in
-`sources.json`; viewing the dashboard makes no external image requests. The
-server serves only six allowlisted JPEGs, not arbitrary local files. No frontend
-dependencies were added. `make test` also checks the dashboard logic when Node
+Artwork is stored locally in `tools/build-monitor/art/`, with source URLs and a
+source kind per image in `sources.json`. Catalogue images (130 profiles, about
+12 MB) are in `tools/build-monitor/art/catalog/`: 126 covers from the NlibAPI
+(third-party TitleDB) and 4 upstream screenshots from nxnative commit `65501fb`
+(Silver Pines, Splatoon Raiders, DK Bananza, Fire Emblem Fortune’s Weave). Those
+screenshots are marked as **not covers**. Seven library families use real 1:1
+covers (4 reused from `art/catalog/`, 3 in `art/library/`), including Z-A and
+Shining Pearl's own covers. Profile sheets are 16:9 for a
+wide image and 1:1 for a cover; the 4 screenshots use `contain`. The cache is
+filled by `tools/build-monitor/fetch_catalog_art.py`, run by hand; the dashboard
+fetches nothing at runtime, and the browser makes no *automatic* external
+request: images and code load from `127.0.0.1`. The only external navigation is a
+link you added yourself, opened by your click. The server serves only
+allowlisted image files, not arbitrary local files. This is artwork only: it
+implies no import, no ROM and no gameplay validation. No frontend dependencies
+were added. `make test` also checks the dashboard logic when Node
 is available; importer and progress tests remain Python-only.
 
 ## Play

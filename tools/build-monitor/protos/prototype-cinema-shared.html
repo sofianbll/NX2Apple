@@ -1,0 +1,402 @@
+<!doctype html>
+<!-- THROWAWAY: full Cinema screen rebuilt with the shared Web Components. Fictional states only; no live data, game launch, build or persistence. -->
+<!-- Run from NXNative: python3 -m http.server 8768 --bind 127.0.0.1 --directory tools/build-monitor ; open /protos/prototype-cinema-shared.html -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NXNative — Cinéma partagé</title>
+  <link rel="stylesheet" href="./nx-shared.css">
+  <style>
+    :root{color-scheme:dark}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--nx-base)}
+    body{color:var(--nx-text);font-family:var(--nx-font)}
+    [hidden]{display:none!important}
+    .cinema{position:relative;isolation:isolate;display:grid;grid-template-columns:96px minmax(0,1fr);min-height:100dvh}
+    .cinema>.nx-bg{position:fixed;z-index:-1}
+    .rail{position:sticky;top:0;z-index:2;display:flex;flex-direction:column;align-items:center;height:100dvh;padding:36px 0 28px;overflow-y:auto;scrollbar-width:none;background:linear-gradient(180deg,#020806,var(--nx-rail));border-right:1px solid var(--nx-hairline)}
+    .rail::-webkit-scrollbar{display:none}
+    .rail nav{display:grid;gap:20px}
+    .brand{flex:none;width:35px;height:35px;margin-bottom:44px}
+    .brand::part(button){border-radius:9px;background:#4ab83b;color:#fff;box-shadow:0 0 20px #49c84012}
+    .profile{position:relative;flex:none;width:58px;height:58px;margin-top:auto;padding:0;border:0;border-radius:50%;background:none;cursor:pointer}
+    .profile img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
+    .profile::after{content:"";position:absolute;right:0;bottom:3px;width:12px;height:12px;border:2px solid var(--nx-base);border-radius:50%;background:var(--nx-green)}
+    .content{position:relative;z-index:1;min-width:0;padding:20px clamp(16px,2vw,32px) 36px 16px}
+
+    .hero{position:relative;isolation:isolate;display:flex;align-items:flex-end;height:38dvh;min-height:280px;padding:clamp(24px,3.8vw,52px);overflow:hidden;border:1px solid var(--nx-hairline);border-radius:16px;background:#082137}
+    .hero-art{position:absolute;inset:0;z-index:-3;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .3s ease}
+    .hero-art.is-visible{opacity:1}
+    .hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#050d11d9 0%,#050d1159 52%,transparent 100%),linear-gradient(0deg,#050d118c,transparent 65%)}
+    .hero-logo{position:absolute;top:7%;left:clamp(24px,3.8vw,52px);width:min(360px,52%);height:36%;object-fit:contain;object-position:left top}
+    .hero-content{position:relative;z-index:1;width:min(600px,100%)}
+    .hero-title{margin:0 0 12px;font-size:clamp(1.8rem,3.2vw,3rem);font-weight:600;line-height:1.05;letter-spacing:-.025em;text-wrap:balance}
+    .hero-copy{margin:0 0 9px;color:var(--nx-text-soft);font-size:1.0625rem;line-height:1.45;text-shadow:0 1px 3px #0008}
+    .hero-meta{margin:0 0 18px;color:var(--nx-muted);font-size:.875rem;line-height:1.45;text-shadow:0 1px 3px #0008}
+    .hero-actions{display:flex;align-items:center;gap:21px;flex-wrap:wrap}
+    .hero-actions .nx-primary{flex:none}
+    .nx-primary svg{width:25px;height:25px;fill:currentColor;stroke:none}
+
+    .library{margin-top:18px}
+    .library-head{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:38px;margin-bottom:10px}
+    .library h2{margin:0;font-size:1.1875rem;font-weight:400;line-height:1.3}
+    .nx-secondary svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .library-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;align-items:start;gap:24px}
+    .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:5px}
+    .tiles nx-tile{min-width:0}
+    .build-slot{min-width:0}
+    .state{min-height:24px;margin:22px 0 0;color:var(--nx-green-bright);font-size:.875rem;line-height:1.6}
+    .note{max-width:90ch;margin:8px 0 0;color:var(--nx-muted);font-size:.8rem;line-height:1.6}
+    .feedback{display:grid;gap:10px;max-width:720px;margin-top:20px;font-size:.875rem}
+    .feedback label{display:grid;gap:7px}
+    .feedback select,.feedback textarea{width:100%;padding:10px 12px;border:1px solid var(--nx-border);border-radius:6px;background:var(--nx-raised);color:var(--nx-text);font:inherit}
+    .feedback textarea{min-height:72px;resize:vertical}
+    .feedback-actions{display:flex;gap:10px;flex-wrap:wrap}
+    .send,.export{width:fit-content;padding:11px 16px;border-radius:6px;font:inherit;cursor:pointer}
+    .send{border:0;background:var(--nx-text);color:var(--nx-base)}
+    .send:disabled{cursor:default;opacity:.55}
+    .export{border:1px solid var(--nx-border);background:transparent;color:var(--nx-text)}
+
+    @media(max-width:1180px){
+      .library-layout{grid-template-columns:1fr}
+      .build-slot{margin-top:18px}
+    }
+    @media(max-width:820px){
+      .cinema{grid-template-columns:72px minmax(0,1fr)}
+      .rail{padding:24px 0 20px}
+      .rail nav{gap:12px}
+      .brand{margin-bottom:28px}
+      .profile{width:48px;height:48px}
+      .content{padding:14px 14px 28px 12px}
+      .hero{height:38dvh;min-height:320px;padding:24px}
+      .hero-logo{left:24px;width:min(320px,64%);height:30%}
+      .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media(max-width:480px){
+      .cinema{grid-template-columns:64px minmax(0,1fr)}
+      .rail{padding:16px 0}
+      .rail nav{gap:8px}
+      .brand{margin-bottom:20px}
+      .profile{width:42px;height:42px}
+      .content{padding:10px 10px 24px 8px}
+      .hero{height:auto;min-height:340px;padding:20px}
+      .hero-logo{top:20px;left:20px;width:70%;height:28%}
+      .hero-copy{font-size:.9375rem}
+      .hero-meta{margin-bottom:14px;font-size:.75rem}
+      .hero-actions{gap:12px}
+      .hero-actions .nx-primary{min-width:132px;height:50px;padding:0 18px;font-size:1.2rem}
+      .library-head{gap:10px}
+      .library .nx-secondary{padding:0 12px;font-size:.875rem}
+      .tiles{grid-template-columns:1fr}
+    }
+    @media(max-height:700px) and (min-width:821px){
+      .rail{padding-top:20px}
+      .rail nav{gap:10px}
+      .brand{margin-bottom:24px}
+      .profile{width:48px;height:48px}
+    }
+    @media(prefers-reduced-motion:reduce){
+      .hero-art{transition:none!important}
+    }
+  </style>
+</head>
+<body>
+  <main class="cinema">
+    <div class="nx-bg" aria-hidden="true"></div>
+    <aside class="rail" aria-label="Navigation Cinéma fictive">
+      <nx-nav class="brand" icon="games" label="NXNative — Accueil" data-action="Accueil"></nx-nav>
+      <nav aria-label="Rubriques simulées">
+        <nx-nav icon="home" label="Accueil" data-action="Accueil" active></nx-nav>
+        <nx-nav icon="library" label="Bibliothèque" data-action="Bibliothèque"></nx-nav>
+        <nx-nav icon="games" label="Jeux" data-action="Jeux"></nx-nav>
+        <nx-nav icon="friends" label="Amis" data-action="Amis"></nx-nav>
+        <nx-nav icon="downloads" label="Téléchargements" data-action="Téléchargements"></nx-nav>
+        <nx-nav icon="settings" label="Réglages" data-action="Réglages"></nx-nav>
+      </nav>
+      <button class="profile" id="profile" type="button" aria-label="Profil de Sofian — simulation">
+        <img src="./cinema-block-1-assets/avatar.png" alt="">
+      </button>
+    </aside>
+
+    <div class="content">
+      <section class="hero" id="hero" aria-label="Stardew Valley — sélection fictive">
+        <img class="hero-art is-visible" id="hero-art-a" src="./cinema-block-1-assets/hero-background.png" alt="" draggable="false">
+        <img class="hero-art" id="hero-art-b" alt="" draggable="false">
+        <img class="hero-logo" id="hero-logo" src="./cinema-block-1-assets/stardew-logo.png" alt="Stardew Valley" draggable="false">
+        <div class="hero-content">
+          <h1 class="hero-title" id="hero-title" hidden>Stardew Valley</h1>
+          <p class="hero-copy" id="hero-copy">Héritez de la vieille ferme de votre grand-père et redonnez vie à la vallée.</p>
+          <p class="hero-meta" id="hero-meta">Nintendo Switch · Build 1.6 fictif · Dernière session fictive : hier</p>
+          <div class="hero-actions">
+            <button class="nx-primary" id="play" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5c0-1 1-1.5 2-1l14 8.5c1 .5 1 1.5 0 2L7 21.5c-1 .5-2 0-2-1Z"/></svg>Jouer</button>
+            <nx-pill id="hero-status" status="ready" label="Jouable"></nx-pill>
+          </div>
+        </div>
+      </section>
+
+      <section class="library" aria-labelledby="library-title">
+        <header class="library-head">
+          <h2 id="library-title">Ma bibliothèque</h2>
+          <button class="nx-secondary" id="all" type="button">Voir tout<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 3 7 7-7 7"/></svg></button>
+        </header>
+        <div class="library-layout">
+          <div class="tiles" id="tiles" aria-label="Pochettes et états fictifs d’exemple">
+            <nx-tile data-id="zelda" src="./cinema-block-2-assets/zelda.png" game="Zelda : Link’s Awakening" status="test" label="À tester"></nx-tile>
+            <nx-tile data-id="pokemon" src="./cinema-block-2-assets/pokemon.png" game="Pokémon FireRed" status="test" label="À tester"></nx-tile>
+            <nx-tile data-id="mario" src="./cinema-block-2-assets/mario.png" game="Mario Kart 8 Deluxe" status="ready" label="Jouable"></nx-tile>
+            <nx-tile data-id="n64" src="./cinema-block-2-assets/n64.png" game="Nintendo 64 Classics" status="compiling" label="Compilation" value="12"></nx-tile>
+          </div>
+          <aside class="build-slot" aria-label="Exemple fictif de construction">
+            <nx-build-card name="Mario Kart — shaders" done="1670" total="29651"></nx-build-card>
+          </aside>
+        </div>
+      </section>
+
+      <p class="state" id="state" role="status">Cinéma partagé · États fictifs, aucune action réelle.</p>
+      <p class="note">Sélection : clic, Tab puis Entrée, ou flèches dans la grille. Les métadonnées du hero concernent uniquement la sélection. Les illustrations de la grille sont les crops validés, avec leurs badges d’origine masqués par les pills ; les valeurs de compilation sont fictives.</p>
+      <form class="feedback" id="feedback">
+        <label for="verdict">Ton avis sur l’écran Cinéma partagé
+          <select id="verdict" name="verdict" required>
+            <option value="" disabled selected>Choisir…</option>
+            <option value="validate">Valider visuellement cet écran</option>
+            <option value="revise">Demander des corrections</option>
+          </select>
+        </label>
+        <label for="note">Précisions
+          <textarea id="note" name="note" aria-label="Précisions pour l’écran Cinéma partagé" placeholder="Hero, grille, rail, carte de compilation, responsive ou clavier…"></textarea>
+        </label>
+        <div class="feedback-actions">
+          <button class="send" id="send" type="submit">Envoyer mon retour</button>
+          <button class="export" id="export" type="button">Exporter mon retour</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script type="module">
+    import '../nx-components.js';
+
+    const $ = id => document.getElementById(id);
+    const games = [
+      {
+        id: 'stardew', title: 'Stardew Valley', hero: './cinema-block-1-assets/hero-background.png', logo: './cinema-block-1-assets/stardew-logo.png',
+        status: 'ready', label: 'Jouable', value: null, platform: 'Nintendo Switch', build: 'Build 1.6 fictif', session: 'Dernière session fictive : hier',
+        description: 'Héritez de la vieille ferme de votre grand-père et redonnez vie à la vallée.',
+      },
+      {
+        id: 'zelda', title: 'Zelda : Link’s Awakening', hero: '../art/zelda.jpg',
+        status: 'test', label: 'À tester', value: null, platform: 'Nintendo Switch', build: 'Build 1.1.0 fictif', session: 'Dernière session fictive : il y a 3 jours',
+        description: 'Explorez l’île de Cocolint et réveillez le Poisson-Rêve dans cette aventure réinventée.',
+      },
+      {
+        id: 'pokemon', title: 'Pokémon FireRed', hero: '../art/pokemon.jpg',
+        status: 'test', label: 'À tester', value: null, platform: 'Game Boy Advance', build: 'Build rétro fictif', session: 'Dernière session fictive : il y a 1 semaine',
+        description: 'Parcourez Kanto, composez votre équipe et complétez votre Pokédex.',
+      },
+      {
+        id: 'mario', title: 'Mario Kart 8 Deluxe', hero: '../art/mario.jpg',
+        status: 'ready', label: 'Jouable', value: null, platform: 'Nintendo Switch', build: 'Build 3.0 fictif', session: 'Dernière session fictive : hier',
+        description: 'Retrouvez les circuits et les personnages de Mario Kart dans des courses endiablées.',
+      },
+      {
+        id: 'n64', title: 'Nintendo 64 Classics', hero: '../art/n64.jpg',
+        status: 'compiling', label: 'Compilation', value: '12', platform: 'Nintendo 64', build: 'Compilation fictive : 12 %', session: 'Aucune session fictive enregistrée',
+        description: 'Une sélection fictive de classiques Nintendo 64, présentée pendant sa compilation.',
+      },
+    ];
+
+    const tiles = [...document.querySelectorAll('nx-tile')];
+    const railItems = [...document.querySelectorAll('.rail nx-nav')];
+    const mainRailItems = [...document.querySelectorAll('.rail nav nx-nav')];
+    const artA = $('hero-art-a');
+    const artB = $('hero-art-b');
+    let selectedId = 'stardew';
+    let visibleArt = artA;
+    let artTimer = 0;
+    let artGeneration = 0;
+
+    function selectedGame() {
+      return games.find(game => game.id === selectedId) || games[0];
+    }
+
+    function setHeroArt(game, immediate) {
+      clearTimeout(artTimer);
+      const generation = ++artGeneration;
+      if (visibleArt.getAttribute('src') === game.hero) {
+        (visibleArt === artA ? artB : artA).classList.remove('is-visible');
+        return;
+      }
+      const swap = () => {
+        const next = visibleArt === artA ? artB : artA;
+        const current = visibleArt;
+        next.src = game.hero;
+        const reveal = () => {
+          if (generation !== artGeneration) return;
+          next.classList.add('is-visible');
+          current.classList.remove('is-visible');
+          visibleArt = next;
+        };
+        if (next.complete && next.naturalWidth) reveal();
+        else next.addEventListener('load', reveal, { once: true });
+      };
+      if (immediate) swap();
+      else artTimer = setTimeout(swap, 125);
+    }
+
+    function renderHero(game, immediateArt = false) {
+      $('hero').setAttribute('aria-label', `${game.title} — sélection fictive`);
+      $('hero-logo').hidden = !game.logo;
+      if (game.logo) {
+        $('hero-logo').src = game.logo;
+        $('hero-logo').alt = game.title;
+      }
+      $('hero-title').hidden = Boolean(game.logo);
+      $('hero-title').textContent = game.title;
+      $('hero-copy').textContent = game.description;
+      $('hero-meta').textContent = `${game.platform} · ${game.build} · ${game.session}`;
+      $('hero-status').setAttribute('status', game.status);
+      $('hero-status').setAttribute('label', game.label);
+      if (game.value === null) $('hero-status').removeAttribute('value');
+      else $('hero-status').setAttribute('value', game.value);
+      setHeroArt(game, immediateArt);
+    }
+
+    function selectGame(id, { focus = false, announce = true, immediateArt = false } = {}) {
+      selectedId = games.some(game => game.id === id) ? id : 'stardew';
+      const game = selectedGame();
+      let selectedTile;
+      for (const tile of tiles) {
+        tile.selected = tile.dataset.id === selectedId;
+        if (tile.selected) selectedTile = tile;
+      }
+      renderHero(game, immediateArt);
+      if (focus && selectedTile) selectedTile.focus();
+      if (announce) $('state').textContent = `Simulation : ${game.title} sélectionné. Aucune fiche réelle ni commande exécutée.`;
+    }
+
+    document.addEventListener('nx-select', event => {
+      const tile = event.target.closest?.('nx-tile');
+      if (tile && tiles.includes(tile)) selectGame(tile.dataset.id);
+    });
+
+    for (const [index, tile] of tiles.entries()) {
+      tile.addEventListener('focus', () => {
+        if (selectedId !== tile.dataset.id) selectGame(tile.dataset.id, { announce: false });
+      });
+      tile.addEventListener('keydown', event => {
+        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+        const columns = getComputedStyle($('tiles')).gridTemplateColumns.split(' ').length;
+        const steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns };
+        let next;
+        if (event.key in steps) next = (index + steps[event.key] + tiles.length) % tiles.length;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = tiles.length - 1;
+        else return;
+        event.preventDefault();
+        selectGame(tiles[next].dataset.id, { focus: true });
+      });
+    }
+
+    for (const item of railItems) {
+      item.addEventListener('click', () => {
+        const action = item.dataset.action;
+        for (const nav of mainRailItems) nav.active = nav.dataset.action === action;
+        $('state').textContent = `Simulation : ${action}. Aucune navigation réelle.`;
+      });
+      item.addEventListener('keydown', event => {
+        if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const index = railItems.indexOf(item);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? railItems.length - 1
+          : (index + (['ArrowDown', 'ArrowRight'].includes(event.key) ? 1 : -1) + railItems.length) % railItems.length;
+        railItems[next].focus();
+      });
+    }
+
+    $('play').addEventListener('click', () => {
+      $('state').textContent = `Simulation : clic sur Jouer pour ${selectedGame().title}. Aucun jeu lancé.`;
+    });
+    $('all').addEventListener('click', () => {
+      $('state').textContent = 'Simulation : Voir tout. Aucun changement de la bibliothèque réelle.';
+    });
+    $('profile').addEventListener('click', () => {
+      $('state').textContent = 'Simulation : profil de Sofian. Aucun compte consulté.';
+    });
+    document.addEventListener('nx-details', event => {
+      $('state').textContent = `Simulation : détails de « ${event.detail.name} » (${event.detail.count}, valeurs fictives). Aucun build consulté.`;
+    });
+
+    function feedback() {
+      return { block: 'cinema-shared', verdict: $('verdict').value, note: $('note').value.trim(), selection: selectedId };
+    }
+    $('feedback').addEventListener('submit', async event => {
+      event.preventDefault();
+      const answer = feedback();
+      if (!answer.verdict) return;
+      const summary = answer.verdict === 'validate' ? 'Cinéma partagé validé' : 'Cinéma partagé à reprendre';
+      if (typeof openchamber !== 'undefined' && typeof openchamber.submit === 'function') {
+        await openchamber.submit(answer, summary);
+        $('send').disabled = true;
+      } else {
+        $('state').textContent = `${summary} · Test local uniquement, aucun fichier modifié.`;
+      }
+    });
+    $('export').addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(feedback(), null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'retour-prototype-cinema-shared.json';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    const saved = typeof openchamber !== 'undefined' ? openchamber.answer : null;
+    if (saved?.block === 'cinema-shared') {
+      $('verdict').value = saved.verdict;
+      $('note').value = saved.note || '';
+      $('send').disabled = true;
+    }
+    selectGame(saved?.block === 'cinema-shared' ? saved.selection : 'stardew', { announce: false, immediateArt: true });
+
+    // Opt-in smoke test: keeps Shadow DOM interaction checks reproducible without a test harness.
+    if (new URL(location.href).searchParams.has('selftest')) {
+      const check = (condition, label) => {
+        if (!condition) throw new Error(label);
+      };
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+      setTimeout(async () => {
+        try {
+          const zelda = tiles[0];
+          zelda.shadowRoot.querySelector('button').click();
+          check(selectedId === 'zelda' && zelda.selected, 'Clic sur une tuile');
+          check($('hero-title').textContent === games[1].title, 'Métadonnées de la sélection');
+          zelda.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, composed: true }));
+          check(selectedId === 'pokemon' && tiles[1].selected, 'Navigation par flèche');
+          document.querySelector('nx-build-card').shadowRoot.querySelector('.details').click();
+          check($('state').textContent.includes('Aucun build consulté'), 'Détails fictifs de la build card');
+          mainRailItems[1].shadowRoot.querySelector('button').click();
+          check(mainRailItems[1].active && $('state').textContent.includes('Aucune navigation réelle'), 'Navigation fictive du rail');
+          selectGame('mario', { announce: false });
+          selectGame('stardew', { announce: false });
+          await wait(550);
+          check(visibleArt.getAttribute('src') === games[0].hero, 'Annulation de l’artwork obsolète');
+          const expectedColumns = innerWidth <= 480 ? 1 : innerWidth <= 820 ? 2 : 4;
+          check(getComputedStyle($('tiles')).gridTemplateColumns.split(' ').length === expectedColumns, 'Grille responsive');
+          check(document.documentElement.scrollWidth <= innerWidth, 'Absence de débordement horizontal');
+          document.documentElement.dataset.selftest = 'ok';
+          document.title = 'SELFTEST OK — Cinéma partagé';
+          $('state').textContent = 'SELFTEST OK : clic, métadonnées, clavier, build card, rail, artwork temporisé et responsive.';
+        } catch (error) {
+          document.documentElement.dataset.selftest = 'error';
+          document.title = 'SELFTEST ÉCHEC — Cinéma partagé';
+          $('state').textContent = `SELFTEST ÉCHEC : ${error.message}`;
+          console.error(error);
+        }
+      }, 0);
+    }
+  </script>
+</body>
+</html>
