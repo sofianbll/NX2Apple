@@ -215,7 +215,10 @@ class StaticAndPlayTests(unittest.TestCase):
         return site, readme
 
     def serve_catalog(self, site, readme):
-        with patch.object(monitor, '__file__', str(site / 'monitor.py')), patch.object(monitor, 'GAMES_README', readme):
+        readme_patch = patch.object(monitor, 'GAMES_README', readme)
+        readme_patch.start()
+        self.addCleanup(readme_patch.stop)
+        with patch.object(monitor, '__file__', str(site / 'monitor.py')):
             return self.start()
 
     def test_catalog_art_is_allowlisted_by_profile_and_discovered_late(self):
