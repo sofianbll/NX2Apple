@@ -5,6 +5,7 @@ Historique daté des initiatives. Ne décrit jamais l'état présent sans date o
 ## App Mac (packaging desktop)
 
 - [Décisions de cadrage](macos-app-decisions.md) — choix validés par Sofian pendant le cadrage, datés.
+- [Relais de coordination](macos-app-handoff.md) — état et prochaines actions au changement de session.
 
 ## Sources
 
