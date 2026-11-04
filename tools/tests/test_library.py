@@ -596,6 +596,13 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(caught.exception.status, 502)
             self.assertNotIn('defaults', str(caught.exception))
 
+    def test_main_monitor_stop_on_stdin_eof_is_opt_in(self):
+        for arguments, expected in [(['--stop-on-stdin-eof'], True), ([], False)]:
+            monitor = MagicMock()
+            with self.subTest(arguments=arguments), patch.object(sys, 'argv', ['library.py', 'monitor'] + arguments), patch.dict(sys.modules, {'monitor': monitor}):
+                lib.main()
+            self.assertEqual(monitor.serve.call_args.kwargs.get('stop_on_stdin_eof', False), expected)
+
     def test_main_passes_edition_for_build_and_run(self):
         for edition in ('fr', 'en'):
             lib.write_json(self.root / 'games' / 'FireRed' / edition / 'game.json', {'name': f'Pokemon FireRed {edition}', 'slug': f'pokemon-{edition}', 'title_id': '0100000000010000', 'edition': edition})

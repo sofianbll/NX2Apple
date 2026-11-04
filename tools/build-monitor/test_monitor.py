@@ -1,13 +1,18 @@
+from contextlib import redirect_stdout
 from datetime import datetime
+import io
 import unittest
 from monitor import parse, parse_json, catalog
 import json
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from threading import Thread
 from unittest.mock import patch
 import monitor
@@ -60,6 +65,76 @@ class DashboardTests(unittest.TestCase):
         status, headers, body = self.request('/catalog')
         self.assertEqual(status, 200)
         self.assertIsInstance(json.loads(body)['games'], list)
+
+
+class ServeTests(unittest.TestCase):
+    def start(self, stop_on_stdin_eof, stdin):
+        output = io.StringIO()
+        servers, errors = [], []
+        real_server = monitor.ThreadingHTTPServer
+        def bind(*args):
+            servers.append(real_server(*args))
+            return servers[-1]
+        def run():
+            with patch.object(monitor, 'ThreadingHTTPServer', bind), patch.object(sys, 'stdin', stdin), redirect_stdout(output):
+                try:
+                    monitor.serve(lambda: {}, port=0, stop_on_stdin_eof=stop_on_stdin_eof)
+                except Exception as error:
+                    errors.append(error)
+        thread = Thread(target=run, daemon=True)
+        thread.start()
+        deadline = time.monotonic() + 3
+        while not output.getvalue() and not errors and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(errors, [])
+        self.assertTrue(servers)
+        def stop():
+            if thread.is_alive():
+                servers[0].shutdown()
+            thread.join(3)
+            servers[0].server_close()
+        self.addCleanup(stop)
+        return servers[0], thread, output, errors
+
+    def test_stdin_eof_stops_server_and_releases_port(self):
+        read, write = os.pipe()
+        stdin = os.fdopen(read, 'r')
+        control = os.fdopen(write, 'w')
+        self.addCleanup(stdin.close)
+        self.addCleanup(control.close)
+        server, thread, output, errors = self.start(True, stdin)
+        self.assertEqual(output.getvalue(), f'Build monitor: http://127.0.0.1:{server.server_port}\n')
+        control.close()
+        thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        reopened = ThreadingHTTPServer(('127.0.0.1', server.server_port), handler(lambda: {}))
+        reopened.server_close()
+
+    def test_stdin_is_not_read_without_opt_in(self):
+        class UnusedInput:
+            used = False
+            def read(self):
+                self.used = True
+                return ''
+            def __iter__(self):
+                self.used = True
+                return iter(())
+        stdin = UnusedInput()
+        server, thread, _, errors = self.start(False, stdin)
+        server.shutdown()
+        thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertFalse(stdin.used)
+
+    def test_bind_failure_does_not_print_readiness(self):
+        occupied = ThreadingHTTPServer(('127.0.0.1', 0), handler(lambda: {}))
+        self.addCleanup(occupied.server_close)
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(OSError):
+            monitor.serve(lambda: {}, port=occupied.server_port)
+        self.assertEqual(output.getvalue(), '')
 
 
 class StaticAndPlayTests(unittest.TestCase):
@@ -140,7 +215,10 @@ class StaticAndPlayTests(unittest.TestCase):
         return site, readme
 
     def serve_catalog(self, site, readme):
-        with patch.object(monitor, '__file__', str(site / 'monitor.py')), patch.object(monitor, 'GAMES_README', readme):
+        readme_patch = patch.object(monitor, 'GAMES_README', readme)
+        readme_patch.start()
+        self.addCleanup(readme_patch.stop)
+        with patch.object(monitor, '__file__', str(site / 'monitor.py')):
             return self.start()
 
     def test_catalog_art_is_allowlisted_by_profile_and_discovered_late(self):

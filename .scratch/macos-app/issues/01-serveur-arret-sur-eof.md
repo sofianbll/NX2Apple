@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Avec l'option, fermer le pipe stdin arrête le serveur en moins de 3 s et libère le port (test sur port 0).
 - [ ] Sans l'option, stdin n'est jamais lu ; `make monitor` et Ctrl+C se comportent comme avant.

@@ -9,3 +9,4 @@ Session de coordination `ses_e59a3af88ffeMiB2G5yhgxkJ18`, à partir de `a77506c`
 - **2026-11-04** — Diffusion : **usage personnel sur ce Mac**, signature ad hoc, aucun compte Apple payant, pas de notarisation.
 - **2026-11-04** — Mort brutale de l'app (crash, Forcer à quitter, SIGKILL) : **le serveur s'arrête seul** sur EOF d'un canal de contrôle tenu par la coque (à prouver par test).
 - **2026-11-04** — Spec [`.scratch/macos-app/spec.md`](../../.scratch/macos-app/spec.md) et tickets 01–04 **validés tels quels**, propositions incluses (nom `NXNative Dashboard.app`, `WorkspacePath`, `make app`/`dmg`/`app-test`, icône générique, Kimi K3.1 Pro Highspeed). Implémentation sur la branche locale `desktop-app`, sans push.
+- **2026-11-04** — Ticket 01 fusionné dans `desktop-app` (`3014c1c`) : `make test` 57+30+3 OK (implémenteur) ; contrôle coordination en CLI réel : `GET /` 200 puis EOF → exit 0, port libéré.
