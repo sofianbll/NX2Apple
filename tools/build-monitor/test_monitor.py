@@ -51,9 +51,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.request('/', host='untrusted.example')[0], 403)
         self.assertEqual(self.request('/status', method='POST')[0], 501)
 
-    @unittest.skipUnless(shutil.which('node'), 'Node is needed only for dashboard JavaScript tests')
     def test_dashboard_logic(self):
-        subprocess.run(['node', '--test', str(Path(__file__).with_name('test_dashboard.cjs'))], check=True, capture_output=True, text=True)
+        if not shutil.which('node'):
+            self.fail('Node.js is required to run dashboard JavaScript tests')
+        subprocess.run(['node', '--test', str(Path(__file__).with_name('test_dashboard.cjs'))], check=True)
 
 
     def test_catalog_route_serves_the_games_table(self):
