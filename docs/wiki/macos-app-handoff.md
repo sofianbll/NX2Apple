@@ -25,3 +25,17 @@ Rédigé le 2026-11-04 par `ses_e59a3af88ffeMiB2G5yhgxkJ18` (garde du contexte).
 ## Risques
 - Contrôle UI seconde instance non prouvé automatiquement (comportement manuel observé correct par l'implémenteur, non revérifié par la coordination).
 - Hindsight injoignable le 2026-11-04 (timeout) : initiative non enregistrée.
+
+## Reprise du 2026-11-04 — `ses_e594dd988ffeaw38KlFY31gjTI`
+
+Cette entrée datée **supersède l'ancien état « Ticket 04 incomplet » et le risque de contrôle AX ci-dessus**, sans réécrire l'historique laissé par `ses_e59a3af88ffeMiB2G5yhgxkJ18`.
+
+- `desktop-app`, initialement propre à `a0c33a8`, a été fusionnée en **fast-forward** avec `desktop-app-04-dmg` après vérification des branches et de l'ascendance. Résultat : `4a560bf`, qui inclut `c55170d` (WIP), `97bbe1c` (résolution du ticket 04) et le merge d'intégration. Aucun push, aucune installation et aucune modification de `main`.
+- Preuves de t04 relues dans `/private/var/folders/0_/1mcnsfdn41z6sltt2pmtqcrc0000gn/T/opencode/nxnative-t04/`, sans nouvelle recette parallèle : `swift-test.log` = 11 XCTest ; `make-test.log` = 58 + 30 Python et 3 Node ; `make-dmg.log` = DMG vérifié et `DIFF_OK` ; `app-test-ax-1.log` = six PASS, dont seconde instance, avec contrôle AX par PID dans `app_test.py`.
+- État recontrôlé : `WorkspacePath` absent des defaults, `.venv` absent de t04, port 8767 libre, session tmux utilisateur `0` intacte. `main` reste à `a77506c` avec `HANDOFF.md` modifié et l'étude non suivie à préserver ; son `docs/research/macos-app-packaging.md` et la copie intégrée ont le même SHA1 `eaf4bca08b35695cdad950fc7797309188e78632`, à recontrôler avant toute future fusion.
+- Le changement `snapshot()` de `c55170d`, hors ticket, reste à juger en revue. Installation `/Applications`, captures dashboard/conflit/workspace invalide et vérifications `localStorage`, Cmd+V et lien HTTPS restent **non faits**.
+
+### Prochaines actions actualisées
+1. Exécuter la revue **Standards + Spec** de `a77506c..HEAD`, en incluant explicitement `snapshot()` ; traiter ensuite les éventuels correctifs séparément.
+2. Demander l'accord de Sofian pour `desktop-app` → `main`. Avant cette fusion, préserver `HANDOFF.md` et recontrôler l'identité SHA1 de l'étude non suivie.
+3. Après accord et fusion seulement : installation dans `/Applications`, captures et contrôles manuels restants. Ne pas nettoyer le worktree t04 à ce stade.
