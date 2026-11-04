@@ -29,4 +29,5 @@ app:
 	test "$$(lipo -archs "$$binary")" = "arm64"; \
 	codesign --sign - --force "$$bundle"; \
 	codesign --verify --strict "$$bundle"
+	@test "$$(plutil -extract NSAppTransportSecurity json -o - "$(APP_BUNDLE)/Contents/Info.plist")" = '{"NSAllowsLocalNetworking":true}'
 	@printf '%s\n' 'App construite : $(APP_BUNDLE)'
