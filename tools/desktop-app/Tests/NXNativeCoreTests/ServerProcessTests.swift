@@ -131,10 +131,11 @@ final class ServerProcessTests: XCTestCase {
         let witness = Process()
         witness.executableURL = URL(fileURLWithPath: "/bin/sleep")
         witness.arguments = ["30"]
+        let witnessExited = DispatchSemaphore(value: 0)
+        witness.terminationHandler = { _ in witnessExited.signal() }
         try witness.run()
         defer {
-            if witness.isRunning { witness.terminate() }
-            witness.waitUntilExit()
+            stopWitness(witness, exited: witnessExited)
             try? fixture.cleanUp()
         }
         try await server.start()
@@ -197,6 +198,14 @@ final class ServerProcessTests: XCTestCase {
         XCTAssertNil(try? fixture.signalNames())
         let log = try String(contentsOf: fixture.logURL, encoding: .utf8)
         XCTAssertTrue(log.contains("Build monitor: http://127.0.0.1:\(fixture.port)"))
+    }
+
+    private func stopWitness(_ witness: Process, exited: DispatchSemaphore) {
+        if witness.isRunning { witness.terminate() }
+        if exited.wait(timeout: .now() + 2) == .timedOut {
+            Darwin.kill(witness.processIdentifier, SIGKILL)
+            _ = exited.wait(timeout: .now() + 2)
+        }
     }
 
     private func assertInvalidWorkspace(removing path: String) async throws {
