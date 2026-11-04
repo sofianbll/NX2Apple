@@ -31,6 +31,14 @@ test('Stardew confirmation applies only to the current successful build', () => 
   assert.equal(call('gameView',{...stardew,state:'available'}).label,'Application disponible');
 });
 
+test('confirmed builds: Z-A, French FireRed, Mario Kart 8, Zelda; other FireRed editions and Perle stay to test', () => {
+  for (const [title_id, state] of [['0100F43008C44000','done'],['01004B3023412000','experimental'],['0100152000022000','done'],['01006BB00C6F0000','done']]) {
+    assert.equal(call('gameView',game({title_id,app:true,state})).label,'Jouable · confirmé',title_id);
+  }
+  assert.equal(call('gameView',game({title_id:'0100554023408000',app:true,state:'experimental'})).label,'À tester en jeu');
+  assert.equal(call('gameView',game({title_id:'010018E011D92000',app:true,state:'experimental'})).label,'À tester en jeu');
+});
+
 test('Mario requires an update, not a repeat build of its 32-bit base', () => {
   const mario = game({title_id:'0100152000022000',state:'untested'});
   assert.equal(call('gameView',mario).label,'Mise à jour requise');

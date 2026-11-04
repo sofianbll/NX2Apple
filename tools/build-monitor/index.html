@@ -310,6 +310,8 @@ select{min-width:0;flex:1;padding:9px 12px;border:1px solid var(--nx-border);bor
 <script>
 const EDITIONS = {fr:'Français',en:'Anglais',de:'Allemand',es:'Espagnol',it:'Italien',ja:'Japonais'};
 const STARDEW = '0100E65002BB8000';
+// Builds Sofian confirmed working on his Mac (FireRed: the French edition only). A Title ID, not a family: other editions stay untested.
+const CONFIRMED = new Set([STARDEW,'0100F43008C44000','01004B3023412000','0100152000022000','01006BB00C6F0000']);
 const UNCONFIRMED = 'Ouverture non confirmée — vérifie si l’app est ouverte avant de réessayer.';
 const CATALOG = {
   '0100E65002BB8000': {title:'Stardew Valley',art:'stardew',coverSrc:'/art/catalog/0100E65002BB8000.jpg',heroSrc:'/art/stardew-hero.png',logo:'stardew-logo',subtitle:'Ferme & vie au village',order:0},
@@ -333,7 +335,7 @@ function groupGames(games) {
 function gameView(game) {
   if (game.state === 'running') return {label:'Construction en cours',short:'Construction',tone:'info',title:'Construction en cours',note:'Le suivi des constructions affiche l’étape en cours. Aucun temps total n’est inventé.'};
   if (game.app) {
-    if (game.title_id === STARDEW && game.state === 'done') return {label:'Jouable · confirmé',short:'Jouable',tone:'success',title:'Rien ne manque pour jouer',note:'Tu as confirmé le fonctionnement de cette construction avec ta manette PowerA.'};
+    if (CONFIRMED.has(game.title_id) && ['done','experimental'].includes(game.state)) return {label:'Jouable · confirmé',short:'Jouable',tone:'success',title:'Rien ne manque pour jouer',note:'Tu as confirmé que cette application fonctionne sur ton Mac.'};
     return {label:game.state==='experimental'?'À tester en jeu':'Application disponible',short:'À tester',tone:'warning',title:'Il reste à tester en jeu',note:game.state==='experimental'?'L’application Mac est construite. Le profil reste expérimental : compilation réussie ne veut pas dire fonctionnement confirmé.':game.reason};
   }
   if (!game.files.base) return {label:'Base manquante',short:'Base manquante',tone:'error',title:'Ajouter le jeu de base',note:'Le fichier de base est nécessaire avant de construire cette application.'};
