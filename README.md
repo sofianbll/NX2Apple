@@ -190,7 +190,11 @@ A gamepad (browser Gamepad API, also in the Mac app) moves between covers with t
 d-pad or left stick; the bottom face button presses that same **Jouer** button and
 the right face button closes an open sheet or returns to the library. Buttons
 follow the W3C standard mapping by position: on a Nintendo-layout pad such as the
-PowerA, the bottom button is printed B.
+PowerA, the bottom button is printed B. WebKit does not see pads that
+GameController claims without listing them (the PowerA, IDs 0000:0000): the Mac app
+reads those through raw HID like nxnative's `pad_hid_mac.h` (button 2 = A presses
+**Jouer**, button 1 = B goes back, d-pad and left stick move; motion axes ignored),
+only while its window is in front. `#manette` in the URL shows raw browser pad state.
 
 Runtime is separate from build progress: the dashboard distinguishes a native
 settings menu (`nxnative`) from its game's engine (`dmhost`) by exact bundle

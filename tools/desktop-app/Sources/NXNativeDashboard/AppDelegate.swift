@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var server: ServerProcess?
+    private var gamepads: HIDGamepads?
     private var isLaunching = false
     private var isQuitting = false
 
@@ -21,6 +22,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = navigationDelegate
         webView.uiDelegate = navigationDelegate
+        // Only while the dashboard window is in front: a pad press during a game never moves the dashboard.
+        gamepads = HIDGamepads { [weak self] action in
+            MainActor.assumeIsolated {
+                guard let self, NSApp.isActive, self.window.isKeyWindow, self.window.contentView === self.webView else { return }
+                self.webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('nx-pad',{detail:{action:'\(action)'}}))")
+            }
+        }
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
