@@ -11,3 +11,4 @@ Historique daté des initiatives. Ne décrit jamais l'état présent sans date o
 ## Sources
 
 - Étude : [`docs/research/macos-app-packaging.md`](../research/macos-app-packaging.md) (recherche du 2026-11-04, non décisionnelle).
+- **2026-11-04 (soir)** — Corrections après revue commitées, `swift test` borné (13 tests, 3 passes), puis `desktop-app` fusionnée dans `main` (`f592f23`) sur décision de Sofian ; worktrees `desktop-app` et `t04` supprimés. État et suite : `ROADMAP.md` (v0.2.0). Le relais ci-dessus est historique.
