@@ -7,25 +7,26 @@ Ce qui n'est pas listé ici est hors périmètre jusqu'à nouvelle décision.
 
 Bibliothèque Cinéma sur `127.0.0.1:8767` : pochettes, catalogue, bouton Jouer, réglages natifs. Voir `CHANGELOG.md`.
 
-## v0.1.1 — Ménage
+## v0.1.1 — Ménage (tag `v0.1.1`, `8e93867`) ✅
 
-- [ ] Relais et Goal archivés dans `docs/archive/` ; `CHANGELOG.md` et cette feuille de route à la racine.
+- [x] Relais et Goal archivés dans `docs/archive/` ; `CHANGELOG.md` et cette feuille de route à la racine.
 - [x] Un `game.json` ou un état JSON abîmé n'arrête plus tout le dashboard.
 - [x] « Verrou occupé » distingué des autres erreurs.
 - [x] `make test` échoue clairement si Node manque.
 - [x] Sonde R/ZR rangée dans le dépôt (elle était dans un dossier temporaire).
 - [x] README à jour (tests, `protos/` encore utilisé à l'exécution).
-- [ ] `make test` vert, tag `v0.1.1`.
+- [x] `make test` vert, tag `v0.1.1`.
 
 ## v0.2.0 — App Mac (`NXNative Dashboard.app`, DMG)
 
-Spec : `.scratch/macos-app/` sur la branche `desktop-app`.
+Spec : `.scratch/macos-app/`. Fusionnée dans `main` le 2026-11-04 (`f592f23`).
 
-- [ ] `swift test` se termine toujours (plus de processus `xctest` bloqué).
-- [ ] Corrections après revue testées et commitées sur `desktop-app`.
-- [ ] `make test`, `swift test`, `make dmg` verts.
-- [ ] `make app-test` lancé **avec l'accord de Sofian, quand il n'utilise pas le Mac** : il pilote des fenêtres.
-- [ ] Fusion dans `main` (accordée par Sofian si tout est vert), tag `v0.2.0`.
+- [x] `swift test` se termine toujours (plus de processus `xctest` bloqué).
+- [x] Corrections après revue testées et commitées sur `desktop-app`.
+- [x] `make test`, `swift test`, `make dmg` verts.
+- [ ] Test à la main par Sofian (remplace `make app-test`, qui pilote des fenêtres) : ouverture, Quitter, Dock, liens, préférences gardées.
+- [x] Fusion dans `main`.
+- [ ] Tag `v0.2.0` après le test de Sofian.
 - [ ] Installation par Sofian depuis le DMG (« Ouvrir quand même »).
 
 ## v0.3.0 — Vue Console
