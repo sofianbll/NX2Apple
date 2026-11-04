@@ -474,10 +474,11 @@ def runtime_state(root, game):
 
 def snapshot(root):
     profile = profiles(root)
-    source = source_stamp(root)
+    installed = games(root)
+    source = source_stamp(root) if installed else None
     processes = process_table()
     rows = []
-    for game in games(root):
+    for game in installed:
         state, reason = state_for(root, game, profile.get(game['title_id']), source)
         rows.append({'name': game['name'], 'slug': game['slug'], 'title_id': game['title_id'], 'group': game.get('group'), 'edition': game.get('edition'), 'state': state, 'reason': reason, 'runtime': runtime_for(root, game, processes), 'app': app_path(root, game).is_dir(), 'files': {kind: len(list((game['path'] / kind).glob('*'))) for kind in ('base', 'updates', 'dlc')}})
     pending = []
@@ -840,7 +841,9 @@ def dashboard_play(root, name, show_launcher=True, timeout=10):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['import', 'list', 'build', 'all', 'run', 'monitor', 'clean'])
-    action = parser.parse_args().action
+    parser.add_argument('--stop-on-stdin-eof', action='store_true')
+    args = parser.parse_args()
+    action = args.action
     if action == 'monitor':
         sys.path.insert(0, str(ROOT / 'tools/build-monitor'))
         from monitor import serve, parse_json
@@ -858,7 +861,7 @@ def main():
                     if row['slug'] == active['slug'] and state == 'running':
                         row.update(state='running', reason='Construction en cours')
             return data
-        serve(status, lambda name, show_launcher=True: dashboard_play(ROOT, name, show_launcher), lambda name: dashboard_settings(ROOT, name), lambda name, values: dashboard_save_settings(ROOT, name, values))
+        serve(status, lambda name, show_launcher=True: dashboard_play(ROOT, name, show_launcher), lambda name: dashboard_settings(ROOT, name), lambda name, values: dashboard_save_settings(ROOT, name, values), stop_on_stdin_eof=args.stop_on_stdin_eof)
         return
     if action == 'list':
         for row in snapshot(ROOT)['games']:

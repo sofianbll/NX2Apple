@@ -131,6 +131,25 @@ make clean GAME=stardew     # Deletes only that game's .build cache, never saves
 make test                  # Python tool checks plus both Node dashboard test suites
 ```
 
+## App Mac
+
+```sh
+make app                    # Construire et signer NXNative Dashboard.app
+make dmg                    # Produire et vérifier le DMG dans dist/
+make app-test               # Recette du cycle de vie, port 8767 libre requis
+swift test --package-path tools/desktop-app  # Tests Swift du cycle de vie
+defaults write local.nxnative.dashboard WorkspacePath /chemin/NXNative
+```
+
+Pour installer, ouvrir `dist/NXNative Dashboard.dmg` et glisser l’app vers
+**Applications**. `WorkspacePath` doit désigner ce dossier NXNative, avec son
+`.venv` et `tools/library.py`. L’app et son DMG sont propres à ce Mac et à ce
+dossier ; les préférences enregistrées dans le navigateur ne sont pas migrées.
+La signature est ad hoc, sans Developer ID : l’app n’est ni notariée ni
+distribuée par Apple. Si macOS bloque son ouverture, aller dans **Réglages
+Système → Confidentialité et sécurité**, puis choisir **Ouvrir quand même**
+pour cette app. Ne pas désactiver Gatekeeper.
+
 ## Live build monitor
 
 `make monitor` starts the library dashboard (v0.1.0, Cinéma view). It listens only on

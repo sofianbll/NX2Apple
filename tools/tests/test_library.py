@@ -174,6 +174,11 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             lib.games(self.root)
 
+    def test_empty_snapshot_does_not_require_source_checkout(self):
+        with patch.object(lib, 'source_stamp', side_effect=AssertionError('source inutile')):
+            data = lib.snapshot(self.root)
+        self.assertEqual(data['games'], [])
+
     def test_snapshot_exposes_group_and_edition_without_manifest_private_fields(self):
         lib.write_json(self.root / 'games/FireRed/Français/game.json', {'name': 'Pokemon FireRed FR', 'slug': 'pokemon-fr', 'title_id': '0100000000010000', 'group': 'Pokémon FireRed', 'edition': 'fr', 'private': 'do-not-expose'})
         lib.write_json(self.root / 'games/Other/game.json', {'name': 'Other', 'slug': 'other', 'title_id': '0100000000020000'})
@@ -620,6 +625,13 @@ class LibraryTests(unittest.TestCase):
                 lib.dashboard_settings(self.root, game['slug'])
             self.assertEqual(caught.exception.status, 502)
             self.assertNotIn('defaults', str(caught.exception))
+
+    def test_main_monitor_stop_on_stdin_eof_is_opt_in(self):
+        for arguments, expected in [(['--stop-on-stdin-eof'], True), ([], False)]:
+            monitor = MagicMock()
+            with self.subTest(arguments=arguments), patch.object(sys, 'argv', ['library.py', 'monitor'] + arguments), patch.dict(sys.modules, {'monitor': monitor}):
+                lib.main()
+            self.assertEqual(monitor.serve.call_args.kwargs.get('stop_on_stdin_eof', False), expected)
 
     def test_main_passes_edition_for_build_and_run(self):
         for edition in ('fr', 'en'):
