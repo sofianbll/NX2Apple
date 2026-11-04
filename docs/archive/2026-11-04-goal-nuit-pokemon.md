@@ -1,5 +1,7 @@
 # Goal NXNative — réveil v0.1
 
+> **Archivé le 2026-11-04.** Historique figé, plus aucune instruction ni autorisation en cours. État actuel : `README.md`, `ROADMAP.md`, `CHANGELOG.md`.
+
 **Statut : APPROUVÉ par Sofian le 2026-11-04 (Europe/Paris), via OpenUI, choix « Valider le Goal complet, essai Perle inclus », sans note.**
 
 Activation native **confirmée par la coordination** : `session.send` a répondu `goalEnabled: true` et `promptDispatched: true` pour cette session. Le Goal est en cours ; ne pas le réactiver après une reprise.
