@@ -4,7 +4,7 @@
 
 **Blocked by:** None (construit contre le contrat de 01 ; tests contre un faux serveur). La recette sur le vrai serveur est dans 04.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `swift test` couvre `ServerProcess` contre un faux serveur : disponibilité, échec avant disponibilité, délai 15 s, conflit détecté sans lancement, arrêt par EOF, repli SIGTERM puis SIGKILL au seul PID possédé, processus témoin non lié toujours vivant.
 - [ ] Port déjà pris : état conflit affiché, bouton « Ouvrir dans le navigateur », aucun processus tué ni adopté.
