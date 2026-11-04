@@ -55,3 +55,8 @@ Vue TV et manette, à partir des prototypes `tools/build-monitor/protos/`. Cadra
 ## Gelé
 
 - N64 : 1 NRO trouvé sur 73, pas de nouvel essai sans diagnostic.
+
+## Idées notées (hors version, 2026-11-05)
+
+- Manette PowerA reconnue par macOS comme une Pro Controller : étudier d'abord sans risque (descripteur HID, `ioreg`, captures USB-C), puis seulement envisager firmware ou pilote. Aucun flash sans accord : risque de rendre la manette inutilisable.
+- 60 FPS de Z-A : porter le patch « 60 FPS Static » de Fl4sh9174 (version 2.0.2) dans `dm/games/0100F43008C44000/patches.py`, sur le modèle de TotK.

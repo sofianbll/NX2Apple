@@ -1,0 +1,891 @@
+diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
+index 909975a..be42f81 100644
+--- a/dm/host/front_mac.m
++++ b/dm/host/front_mac.m
+@@ -1,6 +1,7 @@
+ // Mac front end: with DM_WINDOW=1 open a window (CAMetalLayer, for the graphics backend to present frames) + keyboard and controllers → dm_input; the guest runs on a large-stack thread instead and the main thread belongs to AppKit.
+ // Without DM_WINDOW: the guest runs directly on the current thread, behaving the same as with no front end (windowless tests use this).
+-// The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN=1 starts it that way. ⌘Q quits; the left mouse button is the touchscreen.
++// The window is fullscreen-capable (the green button and ⌃⌘F); DM_FULLSCREEN=1 starts it that way. ⌘Q quits, and so does a controller's Home button held for 2 s and
++// confirmed with A (home_quit.h); the left mouse button is the touchscreen.
+ // Cheats (hle_cheats.c): the Cheats menu's rows toggle, reload (⌘R) and open the cheats folder; its first item "Show Cheats
+ // Window" (⌘⇧C, or DM_CHEATS_WINDOW=1 at launch) opens a Cheats panel beside the game: sections, search, the master switch,
+ // safe mode, values, details and the import of cheat files (see the code below).
+@@ -22,6 +23,8 @@
+ #include "motion_pro_mac.h"
+ #include "pad_apple.h"
+ #include "pad_hid_mac.h"
++#include "home_quit.h"
++#include "home_quit_mac.h"
+ #include <signal.h>
+ #include <math.h>
+ #include <sys/stat.h>
+@@ -152,8 +155,11 @@ static void pad_set(int p, uint64_t m, int32_t lx, int32_t ly, int32_t rx, int32
+     if (m || abs(lx) > dead || abs(ly) > dead || abs(rx) > dead || abs(ry) > dead) cursor_hide_for_input();
+     dm_pad_set_player(p, m, lx, ly, rx, ry);
+ }
++static void hq_poll(void);
++static home_quit g_hq;   // the Home button's hold and quit prompt (home_quit.h): while the prompt is open the controllers' input goes to it, not to the game
+ static void pad_read(GCExtendedGamepad *g) {
+     if (!g_input_on) return;
++    hq_poll(); if (hq_blocks_input(g_hq.phase)) return;
+     int p = g_merge ? 0 : pad_slot_of(&g_slots, (__bridge const void *)g.controller); if (p < 0) return;
+     dm_haptics_apple_controller(p, g.controller);
+     uint64_t m = dm_pad_face(g);   // by position, a Nintendo pad by its labels
+@@ -164,8 +170,12 @@ static void pad_read(GCExtendedGamepad *g) {
+     #undef K
+     pad_set(p, m, pad_axis(g.leftThumbstick.xAxis.value), pad_axis(g.leftThumbstick.yAxis.value), pad_axis(g.rightThumbstick.xAxis.value), pad_axis(g.rightThumbstick.yAxis.value));
+ }
+-// Home and Capture: without this macOS takes them as system gestures (Home opens the Games app); the host gives them no function
+-static void pad_keep_system_buttons(GCController *c) { for (NSString *b in @[GCInputButtonHome, GCInputButtonShare]) c.physicalInputProfile.buttons[b].preferredSystemGestureState = GCSystemGestureStateDisabled; }
++// Home and Capture: without this macOS takes them as system gestures (Home opens the Games app). Capture has no function in the host, Home quits when it is held (hq_poll).
++// macOS 27 respects the claim when the Home button setting for apps lets the app decide (hq_log_setting names it in the log)
++static void pad_keep_system_buttons(GCController *c) {
++    for (NSString *b in @[GCInputButtonHome, GCInputButtonShare]) c.physicalInputProfile.buttons[b].preferredSystemGestureState = GCSystemGestureStateDisabled;
++    c.extendedGamepad.buttonHome.pressedChangedHandler = ^(GCControllerButtonInput *b, float v, BOOL down) { (void)b; (void)v; (void)down; if (g_input_on) hq_poll(); };
++}
+ static const char *pad_name(GCController *c) { return c.vendorName.UTF8String ?: "?"; }
+ static void npad_name(int p, char *out, size_t cap) { uint32_t id = dm_player_npad(p); if (id == 0x20) snprintf(out, cap, "handheld"); else snprintf(out, cap, "%u", id); }
+ static void pro_players_changed(GCController *gone) {
+@@ -184,6 +194,7 @@ static int merge_pads_left(GCController *gone) {
+ }
+ // Called at start and on every connect / disconnect (gone: the controller that was just removed, nil on a connect)
+ static void pads_changed(GCController *gone) {
++    hidpad_settle();
+     if (g_merge) {
+         int any = 0;
+         for (GCController *c in GCController.controllers) if (c.extendedGamepad && c != gone) {
+@@ -230,28 +241,39 @@ static void display_awake(int on) {
+ // stay pressed in the game. The front end releases only what it pressed itself: scripted buttons and sticks have their own path, and the touch is also DM_KEYS / DM_CTL's (hle_hid.c).
+ // Out of focus a controller's changes are ignored, so back in focus each controller is read as it is now (a button still held, a stick still deflected)
+ static int g_mouse_down;   // the mouse holds the touch (DmGameView)
++// Nothing the controllers pressed stays pressed (focus lost, the Home quit prompt open)
++static void pads_release(void) {
++    if (g_merge) { if (merge_pads_left(nil)) dm_pad_set(0, 0, 0, 0, 0); return; }
++    for (int p = 0; p < DM_PLAYERS; p++) if (g_held[p]) dm_pad_set_player(p, 0, 0, 0, 0, 0);
++    for (hid_pad *d = g_hidpads; d; d = d->next) { int p = pad_slot_of(&g_slots, d); if (p >= 0) dm_pad_set_player(p, 0, 0, 0, 0, 0); }
++}
++// Each controller read as it is now (focus back, the Home quit prompt closed)
++static void pads_reread(void) {
++    if (g_merge) { for (GCController *c in GCController.controllers) if (c.extendedGamepad) pad_read(c.extendedGamepad); }
++    else for (int p = 0; p < DM_PLAYERS; p++) if (g_held[p].extendedGamepad) pad_read(g_held[p].extendedGamepad);
++    for (hid_pad *d = g_hidpads; d; d = d->next) hidpad_read(d);
++}
++static void hq_close(void);
+ static void input_release(void) {
++    hq_close();   // the prompt or the hold indicator, if one is up: the Games app the system opens for Home takes the focus too
+     [NSCursor setHiddenUntilMouseMoves:NO];
+     display_awake(0);
+     g_input_on = 0;
+     dm_motion_pro_active(0);
+     g_btn = 0; g_w = g_a = g_s = g_d = 0; g_rl = g_ru = g_rr = g_rd = 0; push();
+     if (g_mouse_down) { g_mouse_down = 0; dm_touch_set(NULL, 0); }
+-    if (g_merge) { if (merge_pads_left(nil)) dm_pad_set(0, 0, 0, 0, 0); return; }
+-    for (int p = 0; p < DM_PLAYERS; p++) if (g_held[p]) dm_pad_set_player(p, 0, 0, 0, 0, 0);
+-    for (hid_pad *d = g_hidpads; d; d = d->next) { int p = pad_slot_of(&g_slots, d); if (p >= 0) dm_pad_set_player(p, 0, 0, 0, 0, 0); }
++    pads_release();
+ }
+ static void input_resume(void) {
+     display_awake(1);
+     g_input_on = 1;
+     dm_motion_pro_active(1);
+-    if (g_merge) { for (GCController *c in GCController.controllers) if (c.extendedGamepad) pad_read(c.extendedGamepad); }
+-    else for (int p = 0; p < DM_PLAYERS; p++) if (g_held[p].extendedGamepad) pad_read(g_held[p].extendedGamepad);
+-    for (hid_pad *d = g_hidpads; d; d = d->next) hidpad_read(d);
++    pads_reread();
+ }
+ // Raw HID gamepads (pad_hid_mac.h): a player slot each, as a GameController controller, named by the device's product name
+ static void hidpad_read(hid_pad *d) {
+     if (!g_input_on) return;
++    hq_poll(); if (hq_blocks_input(g_hq.phase)) return;
+     int p = g_merge ? 0 : pad_slot_of(&g_slots, d); if (p < 0) return;
+     int32_t s[4]; pad_hid_sticks(&d->st, s);
+     pad_set(p, pad_hid_buttons(&d->st), s[0], s[1], s[2], s[3]);
+@@ -260,10 +282,12 @@ static void hidpad_attach(hid_pad *d) {
+     int p = g_merge ? 0 : pad_slot_take(&g_slots, d, d->name); char nb[16];
+     if (p < 0) { LOG("controller '%s' (HID) connected: all %d players are taken, not used", d->name, DM_PLAYERS); return; }
+     npad_name(p, nb, sizeof nb); LOG("controller '%s' (HID) connected: player %d (npad %s)", d->name, p + 1, nb);
++    hidpad_show_player(d, p);
+     if (!g_merge) dm_pad_players(pad_slot_mask(&g_slots));   // merged, every controller is player 1, as pads_changed has it
+     hidpad_read(d);
+ }
+ static void hidpad_detach(hid_pad *d) {   // d is already off g_hidpads
++    hq_poll();
+     if (g_merge) {   // as pads_changed: released when the last controller goes away
+         LOG("controller '%s' (HID) disconnected", d->name);
+         if (!merge_pads_left(nil)) dm_pad_set(0, 0, 0, 0, 0);
+@@ -274,6 +298,108 @@ static void hidpad_detach(hid_pad *d) {   // d is already off g_hidpads
+     dm_pad_set_player(p, 0, 0, 0, 0, 0);   // nothing stays pressed
+     dm_pad_players(pad_slot_mask(&g_slots));
+ }
++// Quit with the Home button (home_quit.h, LNPANDY/NX2Apple#336): held for 2 s it opens the prompt (home_quit_mac.h) over the game's view, A quits through the same path as ⌘Q
++// (NSApp terminate, so the save writer and the other exit handlers run as there), B or Home closes it. While the prompt is open the game is told it lost the focus, as the
++// Switch's HOME menu does, and gets no controller input or touch; the keyboard and ⌘Q work as always. DM_HOME_QUIT=0 turns it off
++static int g_hq_on;
++static NSTimer *g_hq_timer;   // while Home is held: the time runs on without a button change
++static NSView *g_hq_hold, *g_hq_prompt; static CAShapeLayer *g_hq_ring;
++static char g_hq_text[HQ_TEXTS][256];
++static void hq_start(void) {
++    g_hq_on = hq_enabled(getenv("DM_HOME_QUIT"));
++    char title[256]; snprintf(title, sizeof title, "Quitter %s ?", DM_GAME_NAME);   // local: French defaults (this Mac's only front end passes no DM_HOME_QUIT_TEXT)
++    const char *def[HQ_TEXTS] = {"Maintiens pour quitter", title, "La progression non sauvegardée sera perdue.", "Quitter", "Annuler"};
++    const char *text = getenv("DM_HOME_QUIT_TEXT");   // a front end's, in the player's language: one line per text, in home_quit.h's order
++    for (int i = 0; i < HQ_TEXTS; i++) hq_text_line(text, i, def[i], g_hq_text[i], sizeof g_hq_text[i]);
++    LOG("front end: hold the Home button to quit %s", g_hq_on ? "is on" : "is off (DM_HOME_QUIT=0)");
++}
++// The Home button setting for apps (macOS 27), once, when the first controller is there (GameController reads it only while one is connected): "system" in the log
++// explains a hold that does nothing, since the system keeps Home whatever the host asks. A front end reads the setting itself (GCControllerHomeButtonSettingsManager)
++static void hq_log_setting(void) {
++#if defined(__MAC_27_0)
++    if (@available(macOS 27.0, *)) {
++        static int done; if (done) return;
++        int any = 0; for (GCController *c in GCController.controllers) if (c.extendedGamepad) any = 1;
++        if (!any) return;
++        done = 1;
++        GCControllerHomeButtonSettingCustomizationStatus by = GCControllerHomeButtonSettingCustomizationDefault; NSError *err = nil;
++        GCControllerHomeButtonSettingInAppAction v = [[GCControllerHomeButtonSettingsManager new] readControllerHomeButtonInAppAction:&by withError:&err];
++        LOG("front end: Home button in apps: %s (%s)%s%s", hq_in_app_name((long)v), by == GCControllerHomeButtonSettingCustomizationUser ? "set by the player" : "the system's default",
++            err ? ", " : "", err ? err.localizedDescription.UTF8String : "");
++    }
++#endif
++}
++static void hq_buttons(int *home, int *a, int *b, GCController **holder) {
++    *home = *a = *b = 0;
++    for (GCController *c in GCController.controllers) {
++        GCExtendedGamepad *g = c.extendedGamepad; if (!g) continue;
++        if (g.buttonHome.isPressed) { *home = 1; if (!*holder) *holder = c; }
++        *a |= g.buttonA.isPressed; *b |= g.buttonB.isPressed;
++    }
++    for (hid_pad *d = g_hidpads; d; d = d->next) if (d->used) {
++        uint64_t buttons = pad_hid_buttons(&d->st);
++        *home |= pad_hid_home(&d->st);
++        *a |= !!(buttons & DM_BTN_A); *b |= !!(buttons & DM_BTN_B);
++    }
++}
++static void hq_fade(NSView *v, int in) {
++    if (!v) return;
++    if (in) v.alphaValue = 0;
++    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) { ctx.duration = 0.18; v.animator.alphaValue = in ? 1 : 0; }
++                        completionHandler:^{ if (!in) [v removeFromSuperview]; }];
++}
++static void hq_hide_hold(void) { [g_hq_timer invalidate]; g_hq_timer = nil; [g_hq_hold removeFromSuperview]; g_hq_hold = nil; g_hq_ring = nil; }
++static void hq_hide_prompt(void) { hq_fade(g_hq_prompt, 0); g_hq_prompt = nil; }
++static void hq_changed(hq_phase was, hq_phase now, GCController *holder) {
++    if (was == HQ_HOLDING) hq_hide_hold();
++    NSView *cv = g_win.contentView;
++    switch (now) {
++    case HQ_HOLDING:
++        g_hq_timer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60 repeats:YES block:^(NSTimer *t) { (void)t; hq_poll(); }];
++        break;
++    case HQ_PROMPT: {
++        pads_release();   // nothing the game held stays pressed while the prompt has the controllers
++        if (g_mouse_down) { g_mouse_down = 0; dm_touch_set(NULL, 0); }
++        dm_focus_set(2);
++        GCExtendedGamepad *g = holder.extendedGamepad;
++        g_hq_prompt = hq_prompt_view(cv.bounds, @(g_hq_text[HQ_TEXT_TITLE]), @(g_hq_text[HQ_TEXT_NOTE]), @(g_hq_text[HQ_TEXT_QUIT]), @(g_hq_text[HQ_TEXT_CANCEL]),
++                                     g.buttonA.sfSymbolsName, g.buttonB.sfSymbolsName);
++        [cv addSubview:g_hq_prompt]; hq_fade(g_hq_prompt, 1);
++        LOG("front end: Home held, quit prompt open");
++        break;
++    }
++    case HQ_SETTLE:
++        hq_hide_prompt(); dm_focus_set(1);
++        LOG("front end: quit prompt closed, the game goes on");
++        break;
++    case HQ_IDLE:
++        if (was == HQ_SETTLE) pads_reread();   // the game reads the controllers again, as they are now
++        break;
++    case HQ_QUIT:
++        LOG("front end: quit from the Home button prompt");
++        [NSApp terminate:nil];   // as ⌘Q
++        break;
++    }
++}
++static void hq_poll(void) {
++    static int busy; if (!g_hq_on || !g_win || busy) return;
++    busy = 1;
++    int home, a, b; GCController *holder = nil; hq_buttons(&home, &a, &b, &holder);
++    double now = CACurrentMediaTime();
++    hq_phase was = g_hq.phase, ph = hq_step(&g_hq, now, home, a, b);
++    if (ph != was) hq_changed(was, ph, holder);
++    double fill = hq_ring(&g_hq, now);
++    if (fill >= 0) {
++        if (!g_hq_hold) { NSView *cv = g_win.contentView; CAShapeLayer *ring = nil; g_hq_hold = hq_hold_view(cv.bounds, @(g_hq_text[HQ_TEXT_HOLD]), &ring); g_hq_ring = ring; [cv addSubview:g_hq_hold]; hq_fade(g_hq_hold, 1); }
++        hq_hold_set(g_hq_ring, fill);
++    }
++    busy = 0;
++}
++static void hq_close(void) {
++    if (g_hq.phase == HQ_IDLE || g_hq.phase == HQ_QUIT) return;
++    if (g_hq.phase == HQ_PROMPT) LOG("front end: quit prompt closed, the window lost the focus");
++    hq_cancel(&g_hq); hq_hide_hold(); hq_hide_prompt();
++}
+ static void pads_start(void) {
+     const char *e = getenv("DM_PAD_MERGE"); g_merge = e && atoi(e);
+     e = getenv("DM_KBD_PLAYER"); g_kbd_own = !g_merge && e && !strcmp(e, "own");
+@@ -281,7 +407,9 @@ static void pads_start(void) {
+     if (g_kbd_own) pad_slot_take(&g_slots, &kbd, "keyboard");   // holds player 1 for good
+     LOG("front end: %s", g_merge ? "every controller is player 1 (DM_PAD_MERGE)" : g_kbd_own ? "the keyboard is player 1, each controller a player of its own from player 2 on (DM_KBD_PLAYER=own)"
+                                                                            : "each controller is a player of its own, the keyboard plays with player 1");
++    hq_start();
+     pads_changed(nil);
++    hq_log_setting();
+     dm_motion_pro_start(pro_devices_changed);
+     hidpad_start();
+ }
+@@ -1261,7 +1389,8 @@ void front_run(void (*guest)(void)) {
+             [NSNotificationCenter.defaultCenter addObserverForName:nm object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+                 GCController *c = n.object; int conn = n.name == GCControllerDidConnectNotification;
+                 if (!c.extendedGamepad || g_merge) LOG("controller %s: %s%s", conn ? "connected" : "disconnected", pad_name(c), c.extendedGamepad ? "" : " (no extended gamepad profile: not used)");
+-                pads_changed(conn ? nil : c); }];
++                pads_changed(conn ? nil : c);
++                if (conn) hq_log_setting(); }];
+         dm_haptics_apple_init();
+         pads_start();
+         [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp handler:^NSEvent *(NSEvent *e) {
+diff --git a/dm/host/home_quit.h b/dm/host/home_quit.h
+new file mode 100644
+index 0000000..64b6b9d
+--- /dev/null
++++ b/dm/host/home_quit.h
+@@ -0,0 +1,94 @@
++// Quit with the Home button (Mac front end, front_mac.m; LNPANDY/NX2Apple#336). Holding Home (the logo button on Xbox and PlayStation pads) for HQ_HOLD_S seconds opens a
++// "Quit?" prompt over the game: A quits (the same exit as ⌘Q), B or a new press of Home closes it. Letting go of Home before the time is up does nothing. A and B are
++// GameController's buttonA and buttonB (by label: the bottom button on an Xbox or PlayStation pad, the one printed A on a Nintendo pad), not the Switch buttons the game
++// gets. Pure, so tests/t_home_quit.c checks it without a controller or a window.
++//
++// The hold works wherever the press reaches the host: pad_keep_system_buttons claims Home on every pad (preferredSystemGestureState = GCSystemGestureStateDisabled), and
++// macOS 27 respects the claim when the Home button setting for apps lets the app decide (front_mac.m logs the setting). When the system takes Home anyway (it opens the
++// Games app or the player's chosen app), the game window loses the focus and whatever was shown closes (hq_cancel). DM_HOME_QUIT=0 turns it off. A front end passes the
++// texts in the player's language as DM_HOME_QUIT_TEXT (hq_text_line, docs/frontends.md), English otherwise.
++#pragma once
++#include <stddef.h>
++#include <stdio.h>
++#include <string.h>
++
++#define HQ_HOLD_S 2.0    // how long Home is held before the prompt opens
++#define HQ_RING_S 0.3    // the hold indicator shows only after this, so a short press shows nothing
++
++typedef enum {
++    HQ_IDLE,      // nothing shown, the game has its input
++    HQ_HOLDING,   // Home is held: the indicator fills up
++    HQ_PROMPT,    // the prompt is open: the game gets no controller input
++    HQ_SETTLE,    // the prompt was closed: the game gets controller input again once Home, A and B are all up, so the B that closed it never reaches the game
++    HQ_QUIT,      // A was pressed in the prompt: the front end quits (final)
++} hq_phase;
++
++typedef struct {
++    hq_phase phase;
++    double since;     // when the hold started (seconds, any clock that only goes forward)
++    int home;         // Home was down at the last step (a press is a change from up to down)
++    int a_up, b_up;   // A and B have been up since the prompt opened: a button already held when it opens does not count
++} home_quit;
++
++// Whether the hold does anything: on unless DM_HOME_QUIT=0 (env: its value, NULL when unset)
++static inline int hq_enabled(const char *env) { return !(env && !strcmp(env, "0")); }
++
++// One step with the buttons as they are now (pressed on any controller) at time now. Called on every change of a button and, while Home is held, from a timer.
++static inline hq_phase hq_step(home_quit *q, double now, int home, int a, int b) {
++    int pressed = home && !q->home;
++    q->home = home;
++    switch (q->phase) {
++    case HQ_IDLE:
++        if (pressed) { q->phase = HQ_HOLDING; q->since = now; }
++        break;
++    case HQ_HOLDING:
++        if (!home) q->phase = HQ_IDLE;   // let go too early
++        else if (now - q->since >= HQ_HOLD_S) { q->phase = HQ_PROMPT; q->a_up = !a; q->b_up = !b; }
++        break;
++    case HQ_PROMPT:
++        if (!a) q->a_up = 1;
++        if (!b) q->b_up = 1;
++        if ((b && q->b_up) || pressed) q->phase = HQ_SETTLE;   // B or Home closes it; with A and B at once the safe one wins
++        else if (a && q->a_up) q->phase = HQ_QUIT;
++        break;
++    case HQ_SETTLE:
++        if (!home && !a && !b) q->phase = HQ_IDLE;
++        break;
++    case HQ_QUIT:
++        break;
++    }
++    return q->phase;
++}
++
++// The window lost focus (another app, the Games app the system opened for Home): whatever was shown closes. A Home still held needs a new press
++static inline void hq_cancel(home_quit *q) { if (q->phase != HQ_QUIT) { q->phase = HQ_IDLE; q->home = 1; } }
++
++// The game gets no controller input in these phases
++static inline int hq_blocks_input(hq_phase p) { return p == HQ_PROMPT || p == HQ_SETTLE || p == HQ_QUIT; }
++
++// How full the hold indicator is (0 to 1), -1 while it is not shown
++static inline double hq_ring(const home_quit *q, double now) {
++    if (q->phase != HQ_HOLDING) return -1;
++    double t = (now - q->since - HQ_RING_S) / (HQ_HOLD_S - HQ_RING_S);
++    return t < 0 ? -1 : t > 1 ? 1 : t;
++}
++
++// The texts, in this order, one per line of DM_HOME_QUIT_TEXT: the hold indicator, the prompt's title, its note, the quit button, the cancel button
++enum { HQ_TEXT_HOLD, HQ_TEXT_TITLE, HQ_TEXT_NOTE, HQ_TEXT_QUIT, HQ_TEXT_CANCEL, HQ_TEXTS };
++// Line i of text into out; an empty or missing line (or no text) gives def. The title's default has the game's name: def is the caller's
++static inline void hq_text_line(const char *text, int i, const char *def, char *out, size_t cap) {
++    const char *s = text;
++    for (int k = 0; s && k < i; k++) { s = strchr(s, '\n'); if (s) s++; }
++    size_t n = 0;
++    if (s) { const char *e = strchr(s, '\n'); n = e ? (size_t)(e - s) : strlen(s); }
++    if (!n) { snprintf(out, cap, "%s", def); return; }
++    if (n >= cap) n = cap - 1;
++    memcpy(out, s, n); out[n] = 0;
++}
++
++// GameController's Home button setting for apps (GCControllerHomeButtonSettingInAppAction, macOS 27) as the word the log line names it by:
++// "system" (the system keeps Home whatever the app asks), "app" (the app decides), "off" (the system does nothing with Home in apps),
++// "unavailable" (could not be read)
++static inline const char *hq_in_app_name(long v) {
++    return v == 0 ? "system" : v == 1 ? "app" : v == -1 ? "unavailable" : v > 1 ? "off" : "unavailable";
++}
+diff --git a/dm/host/home_quit_mac.h b/dm/host/home_quit_mac.h
+new file mode 100644
+index 0000000..12d6998
+--- /dev/null
++++ b/dm/host/home_quit_mac.h
+@@ -0,0 +1,121 @@
++// The views of the Home button's quit prompt (home_quit.h), drawn over the game's view by front_mac.m: AppKit views, so they draw while the game runs, and built here
++// alone so tests/t_home_quit_mac.m can build and draw them without a window or a controller. The look follows NX2Apple's console mode: a dark surface and a cream
++// accent, the primary action as a cream pill with the controller's own button glyph. Sizes follow the view's height, so the prompt reads from a couch on a TV and
++// stays in proportion in a small window.
++#pragma once
++#import <Cocoa/Cocoa.h>
++#import <QuartzCore/QuartzCore.h>
++
++static NSColor *hq_color(double r, double g, double b, double a) { return [NSColor colorWithSRGBRed:r green:g blue:b alpha:a]; }
++#define HQ_BACKGROUND hq_color(0.055, 0.055, 0.06, 1)
++#define HQ_SURFACE hq_color(0.10, 0.10, 0.11, 1)
++#define HQ_CREAM hq_color(1, 0.94, 0.84, 1)
++
++// Points per point of a 720-high view, between 1 and 2
++static CGFloat hq_scale(NSSize s) { CGFloat k = s.height / 720; return k < 1 ? 1 : k > 2 ? 2 : k; }
++
++static NSTextField *hq_label(NSString *text, CGFloat size, NSFontWeight w, NSColor *c, int wrap) {
++    NSTextField *t = wrap ? [NSTextField wrappingLabelWithString:text] : [NSTextField labelWithString:text];
++    t.font = [NSFont systemFontOfSize:size weight:w]; t.textColor = c; t.alignment = NSTextAlignmentCenter;
++    t.translatesAutoresizingMaskIntoConstraints = NO;
++    return t;
++}
++// A controller button's glyph: the symbol the controller reports for it, else a plain letter in a circle
++static NSImageView *hq_glyph(NSString *symbol, NSString *fallback, CGFloat size, NSColor *c) {
++    NSImage *img = symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:nil] : nil;
++    if (!img) img = [NSImage imageWithSystemSymbolName:fallback accessibilityDescription:nil];
++    img = [img imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:size weight:NSFontWeightMedium]];
++    NSImageView *v = [NSImageView imageViewWithImage:img ?: [NSImage new]];
++    v.contentTintColor = c; v.translatesAutoresizingMaskIntoConstraints = NO;
++    return v;
++}
++// Every action is this wide (points at a 720-high view), whatever its label and language: a label of about ten letters ("Abbrechen", "Annuler") fits at
++// full size, and a longer one gets a smaller font, then is cut, so the pills never change width
++#define HQ_ACTION_W 220
++// The font size that fits text into room on one line: size, or smaller down to 70 % of it
++static CGFloat hq_fit(NSString *text, CGFloat size, CGFloat room) {
++    CGFloat w = [text sizeWithAttributes:@{NSFontAttributeName: [NSFont systemFontOfSize:size weight:NSFontWeightSemibold]}].width;
++    if (w <= room) return size;
++    CGFloat s = floor(size * room / w * 10) / 10;
++    return s < size * 0.7 ? size * 0.7 : s;
++}
++// One action of the prompt: glyph and label centred in a pill of a fixed size, the primary one cream
++static NSView *hq_action(NSString *symbol, NSString *fallback, NSString *label, int primary, CGFloat k) {
++    NSColor *fg = primary ? HQ_BACKGROUND : [NSColor colorWithWhite:1 alpha:0.8];
++    CGFloat w = HQ_ACTION_W * k, glyph = 24 * k, gap = 10 * k, inset = 20 * k, room = w - 2 * inset - glyph - gap;
++    NSTextField *t = hq_label(label, hq_fit(label, 22 * k, room), NSFontWeightSemibold, fg, 0);
++    t.lineBreakMode = NSLineBreakByTruncatingTail;
++    [t setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
++    NSStackView *row = [NSStackView stackViewWithViews:@[hq_glyph(symbol, fallback, glyph, fg), t]];
++    row.spacing = gap; row.translatesAutoresizingMaskIntoConstraints = NO;
++    NSView *pill = [NSView new]; pill.translatesAutoresizingMaskIntoConstraints = NO;
++    pill.wantsLayer = YES; pill.layer.cornerRadius = 28 * k;
++    if (primary) pill.layer.backgroundColor = HQ_CREAM.CGColor;
++    [pill addSubview:row];
++    [NSLayoutConstraint activateConstraints:@[[pill.widthAnchor constraintEqualToConstant:w], [pill.heightAnchor constraintEqualToConstant:56 * k],
++        [row.centerXAnchor constraintEqualToAnchor:pill.centerXAnchor], [row.centerYAnchor constraintEqualToAnchor:pill.centerYAnchor],
++        [row.widthAnchor constraintLessThanOrEqualToConstant:w - 2 * inset]]];
++    pill.accessibilityElement = YES; pill.accessibilityRole = NSAccessibilityButtonRole; pill.accessibilityLabel = label;
++    return pill;
++}
++
++// The prompt's scrim keeps the mouse: a view passes the clicks it does not take on to its superview, the game's view, which would make them touches while the
++// prompt has the game out of focus
++@interface HqScrim : NSView @end
++@implementation HqScrim
++- (void)mouseDown:(NSEvent *)e { (void)e; }
++- (void)mouseDragged:(NSEvent *)e { (void)e; }
++- (void)mouseUp:(NSEvent *)e { (void)e; }
++- (void)rightMouseDown:(NSEvent *)e { (void)e; }
++- (void)otherMouseDown:(NSEvent *)e { (void)e; }
++@end
++
++// The prompt over the whole view: a dim scrim, and in its middle the card with the title, the note and the two actions (A quits, B cancels).
++// a_symbol, b_symbol: the controller's own glyphs (GCControllerButtonInput.sfSymbolsName), nil for the plain ones
++static NSView *hq_prompt_view(NSRect bounds, NSString *title, NSString *note, NSString *quit, NSString *cancel, NSString *a_symbol, NSString *b_symbol) {
++    CGFloat k = hq_scale(bounds.size);
++    NSView *scrim = [[HqScrim alloc] initWithFrame:bounds]; scrim.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
++    scrim.wantsLayer = YES; scrim.layer.backgroundColor = [NSColor colorWithWhite:0 alpha:0.6].CGColor;
++    NSTextField *t = hq_label(title, 34 * k, NSFontWeightBold, NSColor.whiteColor, 1), *n = hq_label(note, 20 * k, NSFontWeightRegular, [NSColor colorWithWhite:1 alpha:0.6], 1);
++    NSStackView *actions = [NSStackView stackViewWithViews:@[hq_action(a_symbol, @"a.circle", quit, 1, k), hq_action(b_symbol, @"b.circle", cancel, 0, k)]];
++    actions.spacing = 16 * k; actions.translatesAutoresizingMaskIntoConstraints = NO;
++    NSStackView *card = [NSStackView stackViewWithViews:@[t, n, actions]];
++    card.orientation = NSUserInterfaceLayoutOrientationVertical; card.alignment = NSLayoutAttributeCenterX;
++    card.spacing = 14 * k; [card setCustomSpacing:32 * k afterView:n];
++    card.edgeInsets = NSEdgeInsetsMake(40 * k, 48 * k, 36 * k, 48 * k); card.translatesAutoresizingMaskIntoConstraints = NO;
++    card.wantsLayer = YES; card.layer.backgroundColor = HQ_SURFACE.CGColor; card.layer.cornerRadius = 28 * k;
++    card.layer.borderWidth = 1; card.layer.borderColor = [NSColor colorWithWhite:1 alpha:0.10].CGColor;
++    [scrim addSubview:card];
++    CGFloat w = 600 * k;
++    [NSLayoutConstraint activateConstraints:@[[card.centerXAnchor constraintEqualToAnchor:scrim.centerXAnchor], [card.centerYAnchor constraintEqualToAnchor:scrim.centerYAnchor],
++        [card.widthAnchor constraintEqualToConstant:w], [t.widthAnchor constraintLessThanOrEqualToConstant:w - 96 * k], [n.widthAnchor constraintLessThanOrEqualToConstant:w - 96 * k]]];
++    scrim.accessibilityElement = YES; scrim.accessibilityRole = NSAccessibilityGroupRole; scrim.accessibilityLabel = title;
++    return scrim;
++}
++
++// The hold indicator at the top of the view: a pill with a ring that fills while Home is held, and its label. hq_hold_set moves the ring
++static NSView *hq_hold_view(NSRect bounds, NSString *label, CAShapeLayer **ring_out) {
++    CGFloat k = hq_scale(bounds.size), d = 26 * k, line = 3.5 * k;
++    NSView *ringView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, d, d)]; ringView.wantsLayer = YES; ringView.translatesAutoresizingMaskIntoConstraints = NO;
++    CGPathRef circle = CGPathCreateWithEllipseInRect(CGRectInset(CGRectMake(0, 0, d, d), line / 2, line / 2), NULL);
++    CAShapeLayer *track = [CAShapeLayer layer], *ring = [CAShapeLayer layer];
++    for (CAShapeLayer *l in @[track, ring]) { l.frame = CGRectMake(0, 0, d, d); l.path = circle; l.fillColor = NSColor.clearColor.CGColor; l.lineWidth = line; [ringView.layer addSublayer:l]; }
++    CGPathRelease(circle);
++    track.strokeColor = [NSColor colorWithWhite:1 alpha:0.18].CGColor;
++    ring.strokeColor = HQ_CREAM.CGColor; ring.lineCap = kCALineCapRound; ring.strokeEnd = 0;
++    ring.transform = CATransform3DConcat(CATransform3DMakeRotation(M_PI_2, 0, 0, 1), CATransform3DMakeScale(-1, 1, 1));   // from the top, clockwise
++    [NSLayoutConstraint activateConstraints:@[[ringView.widthAnchor constraintEqualToConstant:d], [ringView.heightAnchor constraintEqualToConstant:d]]];
++    NSStackView *pill = [NSStackView stackViewWithViews:@[ringView, hq_label(label, 20 * k, NSFontWeightSemibold, [NSColor colorWithWhite:1 alpha:0.9], 0)]];
++    pill.spacing = 12 * k; pill.edgeInsets = NSEdgeInsetsMake(0, 18 * k, 0, 24 * k); pill.translatesAutoresizingMaskIntoConstraints = NO;
++    pill.wantsLayer = YES; pill.layer.backgroundColor = [HQ_BACKGROUND colorWithAlphaComponent:0.92].CGColor; pill.layer.cornerRadius = 28 * k;
++    pill.layer.borderWidth = 1; pill.layer.borderColor = [NSColor colorWithWhite:1 alpha:0.12].CGColor;
++    NSView *host = [[NSView alloc] initWithFrame:bounds]; host.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
++    [host addSubview:pill];
++    [NSLayoutConstraint activateConstraints:@[[pill.centerXAnchor constraintEqualToAnchor:host.centerXAnchor], [pill.topAnchor constraintEqualToAnchor:host.topAnchor constant:40 * k],
++        [pill.heightAnchor constraintEqualToConstant:56 * k]]];
++    *ring_out = ring;
++    return host;
++}
++static void hq_hold_set(CAShapeLayer *ring, double fill) {
++    [CATransaction begin]; [CATransaction setDisableActions:YES]; ring.strokeEnd = fill; [CATransaction commit];
++}
+diff --git a/dm/host/pad_hid.h b/dm/host/pad_hid.h
+index 542b567..7733603 100644
+--- a/dm/host/pad_hid.h
++++ b/dm/host/pad_hid.h
+@@ -1,8 +1,10 @@
+ // Raw HID gamepads that GameController does not list (an 8BitDo in its own mode: a Bluetooth HID gamepad macOS pairs, GitHub issue #637): one device's buttons, hat and axes
+ // as HID reports them, turned into Switch buttons and sticks. Pure, so tests/t_pad_hid.c checks it without a controller; pad_hid_mac.h reads the devices.
+ // Buttons by position, as front_mac.m maps GameController (right A, bottom B, top X, left Y). The default map is 8BitDo's D-input numbering (HID button usages 1 A, 2 B, 4 X,
+-// 5 Y, 7 / 8 LB / RB, 9 / 10 LT / RT, 11 select, 12 start, 14 / 15 stick clicks, by Xbox labels); DM_HID_MAP=A=2,B=1,… replaces entries, DM_HID_LOG=1 logs each usage pressed.
++// 5 Y, 7 / 8 LB / RB, 9 / 10 LT / RT, 11 select, 12 start, 14 / 15 stick clicks, by Xbox labels); a device whose buttons come in Nintendo's report 0x3F (Pro Controller clones,
++// whatever their vendor) has that report's numbering instead. DM_HID_MAP=A=2,B=1,… replaces entries, DM_HID_LOG=1 logs each usage pressed.
+ // Sticks: X / Y left, Z / Rz right (Rx / Ry on a device without Z); analog triggers (Brake / Accelerator) press ZL / ZR past half.
++// Report 0x3F carries the sticks raw, off centre and short of the axis's range: pad_hid_raw_axis measures them from their rest, against the reach seen so far.
+ #pragma once
+ #include <math.h>
+ #include <stdint.h>
+@@ -12,6 +14,9 @@
+ #include "dm_input.h"
+ 
+ #define PAD_HID_DEFAULT_VENDOR 0x2DC8   // 8BitDo, whose numbering the default map is (another vendor's pad gets a log line saying so, pad_hid_mac.h)
++#define PAD_HID_NINTENDO_REPORT 0x3F    // the Pro Controller's simple input report: 16 buttons, a hat, four 16-bit axes
++#define PAD_HID_MAX 32                  // pads pad_hid_unlisted compares at a time
++#define PAD_HID_RAW_REACH 0.7f          // a raw stick's reach from its rest until it has gone further (the PowerA NANO's reaches 0.75 to 0.81 of the axis)
+ enum { PH_X, PH_Y, PH_Z, PH_RX, PH_RY, PH_RZ, PH_BRAKE, PH_ACCEL, PH_AXES };
+ typedef struct {
+     uint32_t buttons;          // bit u - 1: HID button usage u held (usages 1..32)
+@@ -19,14 +24,17 @@ typedef struct {
+     float axis[PH_AXES];       // -1..1 (a trigger rests at -1)
+     uint8_t has[PH_AXES];      // the device has the axis
+     uint8_t map[16];           // Switch button bit (dm_input.h order) -> HID button usage, 0 none
++    uint8_t raw;               // sticks go through pad_hid_raw_axis
++    uint8_t rest_seen[PH_AXES];
++    float rest[PH_AXES], reach[PH_AXES][2];   // an axis's rest, and its reach below and above it
+ } pad_hid;
+ 
+ static const char *const pad_hid_names[16] = {"A", "B", "X", "Y", "LS", "RS", "L", "R", "ZL", "ZR", "PLUS", "MINUS", "LEFT", "UP", "RIGHT", "DOWN"};
+ 
+-// DM_HID_MAP: comma-separated NAME=usage entries over the default map (an unknown name or a usage past 32 is skipped)
+-static void pad_hid_init(pad_hid *h, const char *map) {
+-    static const uint8_t def[16] = {2, 1, 5, 4, 14, 15, 7, 8, 9, 10, 12, 11};
+-    memset(h, 0, sizeof *h); h->hat = -1; memcpy(h->map, def, sizeof def);
++// DM_HID_MAP: comma-separated NAME=usage entries over the default map (an unknown name or a usage past 32 is skipped); nintendo: report 0x3F's numbering is that default
++static void pad_hid_init(pad_hid *h, const char *map, int nintendo) {
++    static const uint8_t def[16] = {2, 1, 5, 4, 14, 15, 7, 8, 9, 10, 12, 11}, nin[16] = {2, 1, 4, 3, 11, 12, 5, 6, 7, 8, 10, 9};
++    memset(h, 0, sizeof *h); h->hat = -1; h->raw = (uint8_t)!!nintendo; memcpy(h->map, nintendo ? nin : def, sizeof def);
+     for (int a = 0; a < PH_AXES; a++) h->axis[a] = a >= PH_BRAKE ? -1 : 0;
+     for (const char *s = map; s && *s; s = strchr(s, ',') ? strchr(s, ',') + 1 : "") {
+         const char *eq = strchr(s, '='), *end = strchr(s, ','); if (!eq || (end && eq > end)) continue;
+@@ -34,6 +42,23 @@ static void pad_hid_init(pad_hid *h, const char *map) {
+         for (int b = 0; b < 16; b++) if ((size_t)(eq - s) == strlen(pad_hid_names[b]) && !strncasecmp(s, pad_hid_names[b], eq - s) && u >= 0 && u <= 32) h->map[b] = (uint8_t)u;
+     }
+ }
++// Of n pads +[GCController supportsHIDDevice:] said yes to, which does GameController not list (out[i] = 1: only raw HID reads pad i)? A pad is covered by a listed controller of its
++// name; GameController may name a controller differently from its HID product, so a listed controller no name matched covers one pad too. Up to PAD_HID_MAX pads and controllers.
++static void pad_hid_unlisted(const char *const *pad, int n, const char *const *listed, int m, uint8_t *out) {
++    uint32_t used = 0; int spare = m;
++    for (int i = 0; i < n; i++) {
++        out[i] = 1;
++        for (int j = 0; out[i] && j < m; j++) if (!(used >> j & 1) && !strcmp(pad[i], listed[j])) { used |= 1u << j; out[i] = 0; spare--; }
++    }
++    for (int i = 0; spare > 0 && i < n; i++) if (out[i]) { out[i] = 0; spare--; }
++}
++// The report that shows player p on a Pro Controller's four lights, which a pad runs in a chase until the console gives it a player: subcommand 0x30 of output report 0x01, after neutral
++// rumble data, with the console's pattern for each player. It leaves the pad in its current input report.
++#define PAD_HID_LIGHTS_SIZE 49
++static void pad_hid_lights(uint8_t r[PAD_HID_LIGHTS_SIZE], int p) {
++    static const uint8_t neutral[8] = {0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40}, lights[8] = {0x1, 0x3, 0x7, 0xF, 0x9, 0x5, 0xD, 0x6};
++    memset(r, 0, PAD_HID_LIGHTS_SIZE); r[0] = 0x01; memcpy(r + 2, neutral, sizeof neutral); r[10] = 0x30; r[11] = lights[p & 7];
++}
+ static int pad_hid_axis_of(uint32_t page, uint32_t usage) {   // -1: not a gamepad axis
+     if (page == 1 && usage >= 0x30 && usage <= 0x35) return PH_X + (int)(usage - 0x30);
+     if (page == 2 && usage == 0xC5) return PH_BRAKE;
+@@ -41,6 +66,16 @@ static int pad_hid_axis_of(uint32_t page, uint32_t usage) {   // -1: not a gamep
+     return -1;
+ }
+ static float pad_hid_norm(long v, long min, long max) { return max > min ? (float)(2.0 * (v - min) / (max - min) - 1) : 0; }
++// A raw axis (-1..1) measured from its rest, a full deflection reaching 1. The first value is the rest, unless it is too far out to be one (a stick held while the pad connects: the axis's
++// middle stands in). The reach only grows, each side on its own.
++static float pad_hid_raw_axis(pad_hid *h, int a, float v) {
++    if (!h->rest_seen[a]) {
++        h->rest_seen[a] = 1; h->rest[a] = fabsf(v) < 0.25f ? v : 0; h->reach[a][0] = h->reach[a][1] = PAD_HID_RAW_REACH;
++    }
++    float d = v - h->rest[a]; int side = d > 0;
++    if (fabsf(d) > h->reach[a][side]) h->reach[a][side] = fabsf(d);
++    return d / h->reach[a][side];
++}
+ static int pad_hid_hat(long v, long min, long max) { return v >= min && v <= max && v - min < 8 ? (int)(v - min) : -1; }   // past the 8 directions: centered
+ // One stick: a round dead zone against drift (PAD_HID_DEAD of full deflection), and past it the deflection scaled back to start at 0, so the stick neither jumps to the dead zone's
+ // edge nor loses a small x while y is deflected. Each axis is clamped after the scale: a square-gated stick still reaches full x and y in its corners.
+@@ -61,6 +96,8 @@ static uint64_t pad_hid_buttons(const pad_hid *h) {
+     if (h->has[PH_ACCEL] && h->axis[PH_ACCEL] > 0) m |= DM_BTN_ZR;
+     return m;
+ }
++// Report 0x3F: Home is usage 13; usage 14 is Capture and stays unused.
++static int pad_hid_home(const pad_hid *h) { return h->raw && !!(h->buttons & (1u << 12)); }
+ static void pad_hid_sticks(const pad_hid *h, int32_t s[4]) {   // lx, ly, rx, ry; HID's Y grows downward, the Switch's upward
+     int z = h->has[PH_Z];
+     pad_hid_stick(h->axis[PH_X], -h->axis[PH_Y], &s[0], &s[1]);
+diff --git a/dm/host/pad_hid_mac.h b/dm/host/pad_hid_mac.h
+index b3b3212..5c5106b 100644
+--- a/dm/host/pad_hid_mac.h
++++ b/dm/host/pad_hid_mac.h
+@@ -1,7 +1,9 @@
+ // Mac: raw HID gamepads that GameController does not list (pad_hid.h, GitHub issue #637), read on the main run loop alongside front_mac.m's GameController players.
+ // Each device takes a player slot as a GameController controller does; front_mac.m defines the slot side (hidpad_attach / hidpad_detach / hidpad_read).
+-// Skipped, so no controller is read twice: GameController's synthetic devices, and every device GameController says it will list itself (+[GCController supportsHIDDevice:]:
+-// Xbox, PlayStation, Switch and MFi pads of any vendor). DM_HID_PADS=0 turns this off.
++// Skipped, so no controller is read twice: GameController's synthetic devices and the devices GameController lists. +[GCController supportsHIDDevice:] does not settle the second:
++// macOS gives any HID gamepad with a pad's elements its fallback "Standard MFi Controller" personality, and the call then says yes for a pad gamecontrollerd never lists (a PowerA
++// NANO, "Lic Pro Controller", vendor and product 0). So a device it says yes to waits HIDPAD_GC_WAIT seconds for its GCController (hidpad_settle, pad_hid_unlisted); with none
++// it is read here, and one GameController lists later goes back to it. DM_HID_PADS=0 turns this off.
+ #pragma once
+ #import <IOKit/hid/IOHIDManager.h>
+ #import <GameController/GameController.h>
+@@ -10,9 +12,10 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
+-typedef struct hid_pad { IOHIDDeviceRef hid; pad_hid st; char name[64]; struct hid_pad *next; } hid_pad;
++#define HIDPAD_GC_WAIT 3.0
++typedef struct hid_pad { IOHIDDeviceRef hid; pad_hid st; char name[64]; double due; uint8_t gc, used, nintendo; struct hid_pad *next; } hid_pad;   // gc: supportsHIDDevice said yes; used: read here; nintendo: buttons in report 0x3F
+ static IOHIDManagerRef g_hidpad_manager;
+-static hid_pad *g_hidpads;
++static hid_pad *g_hidpads, *g_hidpads_gc;   // read here; left to GameController
+ static int g_hidpad_log;
+ static void hidpad_attach(hid_pad *d);
+ static void hidpad_detach(hid_pad *d);
+@@ -32,38 +35,87 @@ static void hidpad_value(void *ctx, IOReturn result, void *sender, IOHIDValueRef
+         d->st.hat = pad_hid_hat(x, min, max);
+     } else {
+         int a = pad_hid_axis_of(page, usage); if (a < 0) return;
+-        d->st.axis[a] = pad_hid_norm(x, min, max);
++        float n = pad_hid_norm(x, min, max);
++        d->st.axis[a] = d->st.raw ? pad_hid_raw_axis(&d->st, a, n) : n;
+     }
+     hidpad_read(d);
+ }
+-static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
+-    (void)ctx; (void)sender;
+-    if (result != kIOReturnSuccess || IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDGCSyntheticDeviceKey)) == kCFBooleanTrue) return;
+-    for (hid_pad *d = g_hidpads; d; d = d->next) if (d->hid == hid) return;
+-    if ([GCController supportsHIDDevice:hid]) return;   // front_mac.m reads it through its GCController (once per device: the call is not cheap)
++static hid_pad **hidpad_link(hid_pad **link, IOHIDDeviceRef hid) {
++    while (*link && (*link)->hid != hid) link = &(*link)->next;
++    return link;
++}
++static void hidpad_use(hid_pad *d) {
++    IOHIDDeviceRef hid = d->hid; uint8_t has[PH_AXES] = {0}; int nintendo = 0;
+     NSNumber *vendor = (__bridge NSNumber *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDVendorIDKey)), *product = (__bridge NSNumber *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductIDKey));
+     int vid = vendor.intValue, pid = product.intValue;
+-    hid_pad *d = calloc(1, sizeof *d); if (!d) { LOG("[RED] HID gamepad: cannot allocate device state"); return; }
+-    pad_hid_init(&d->st, getenv("DM_HID_MAP"));
+-    NSString *name = (__bridge NSString *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductKey));
+-    snprintf(d->name, sizeof d->name, "%s", name.UTF8String ?: "HID gamepad");
+     NSArray *els = CFBridgingRelease(IOHIDDeviceCopyMatchingElements(hid, NULL, kIOHIDOptionsTypeNone));
+-    for (id o in els) { IOHIDElementRef e = (__bridge IOHIDElementRef)o; int a = pad_hid_axis_of(IOHIDElementGetUsagePage(e), IOHIDElementGetUsage(e)); if (a >= 0) d->st.has[a] = 1; }
+-    d->hid = (IOHIDDeviceRef)CFRetain(hid); d->next = g_hidpads; g_hidpads = d;
++    for (id o in els) {
++        IOHIDElementRef e = (__bridge IOHIDElementRef)o; int a = pad_hid_axis_of(IOHIDElementGetUsagePage(e), IOHIDElementGetUsage(e));
++        if (a >= 0) has[a] = 1;
++        if (IOHIDElementGetUsagePage(e) == kHIDPage_Button && IOHIDElementGetReportID(e) == PAD_HID_NINTENDO_REPORT) nintendo = 1;
++    }
++    pad_hid_init(&d->st, getenv("DM_HID_MAP"), nintendo); memcpy(d->st.has, has, sizeof has);
++    d->used = 1; d->nintendo = (uint8_t)nintendo;
+     IOHIDDeviceRegisterInputValueCallback(hid, hidpad_value, d);
+     hidpad_attach(d);
+     // HID has no standard button numbering: the default map is 8BitDo's, so another vendor's pad may have its buttons in other places
+-    if (vid != PAD_HID_DEFAULT_VENDOR && !getenv("DM_HID_MAP"))
++    if (vid != PAD_HID_DEFAULT_VENDOR && !nintendo && !getenv("DM_HID_MAP"))
+         LOG("controller '%s' (HID, %04x:%04x): buttons use 8BitDo's numbering; if they are in the wrong places, DM_HID_LOG=1 logs each button's number for a DM_HID_MAP", d->name, vid, pid);
+ }
++static void hidpad_show_player(hid_pad *d, int p) {   // front_mac.m, once the pad has its player
++    if (!d->nintendo) return;
++    uint8_t r[PAD_HID_LIGHTS_SIZE]; pad_hid_lights(r, p);
++    IOReturn e = IOHIDDeviceSetReport(d->hid, kIOHIDReportTypeOutput, r[0], r, sizeof r);
++    if (e != kIOReturnSuccess) LOG("[RED] controller '%s': cannot set its player lights (0x%x)", d->name, e);
++}
++static void hidpad_stop(hid_pad *d) {
++    d->used = 0;
++    IOHIDDeviceRegisterInputValueCallback(d->hid, NULL, NULL);
++    hidpad_detach(d);
++}
++static void hidpad_move(hid_pad *d, hid_pad **from, hid_pad **to) { from = hidpad_link(from, d->hid); *from = d->next; d->next = *to; *to = d; }
++// Once a device's wait is over, a pad GameController still does not list is read here, and one read here that it now lists goes back to it. Runs on the main run loop
++static void hidpad_settle(void) {
++    hid_pad *pads[PAD_HID_MAX]; const char *name[PAD_HID_MAX], *listed[PAD_HID_MAX]; uint8_t raw[PAD_HID_MAX]; int n = 0, m = 0; double now = CFAbsoluteTimeGetCurrent();
++    for (hid_pad *d = g_hidpads_gc; d && n < PAD_HID_MAX; d = d->next) { pads[n] = d; name[n++] = d->name; }
++    for (hid_pad *d = g_hidpads; d && n < PAD_HID_MAX; d = d->next) if (d->gc) { pads[n] = d; name[n++] = d->name; }
++    if (!n) return;
++    for (GCController *c in GCController.controllers) if (m < PAD_HID_MAX) listed[m++] = c.vendorName.UTF8String ?: "";
++    pad_hid_unlisted(name, n, listed, m, raw);
++    for (int i = 0; i < n; i++) {
++        hid_pad *d = pads[i];
++        if (raw[i] && !d->used && d->due <= now) {
++            LOG("controller '%s': GameController does not list it, reading it as a HID gamepad", d->name);
++            hidpad_move(d, &g_hidpads_gc, &g_hidpads); hidpad_use(d);
++        } else if (!raw[i] && d->used) {
++            LOG("controller '%s': GameController lists it now", d->name);
++            hidpad_move(d, &g_hidpads, &g_hidpads_gc); hidpad_stop(d);
++        }
++    }
++}
++static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
++    (void)ctx; (void)sender;
++    if (result != kIOReturnSuccess || IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDGCSyntheticDeviceKey)) == kCFBooleanTrue) return;
++    if (*hidpad_link(&g_hidpads, hid) || *hidpad_link(&g_hidpads_gc, hid)) return;
++    hid_pad *d = calloc(1, sizeof *d); if (!d) { LOG("[RED] HID gamepad: cannot allocate device state"); return; }
++    NSString *name = (__bridge NSString *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductKey));
++    snprintf(d->name, sizeof d->name, "%s", name.UTF8String ?: "HID gamepad");
++    d->hid = (IOHIDDeviceRef)CFRetain(hid);
++    if ([GCController supportsHIDDevice:hid]) {   // once per device: the call is not cheap
++        d->gc = 1; d->due = CFAbsoluteTimeGetCurrent() + HIDPAD_GC_WAIT; d->next = g_hidpads_gc; g_hidpads_gc = d;
++        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((HIDPAD_GC_WAIT + 0.1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ hidpad_settle(); });
++        return;
++    }
++    d->next = g_hidpads; g_hidpads = d;
++    hidpad_use(d);
++}
+ static void hidpad_removed(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
+     (void)ctx; (void)result; (void)sender;
+-    hid_pad **link = &g_hidpads;
+-    while (*link && (*link)->hid != hid) link = &(*link)->next;
++    hid_pad **link = hidpad_link(&g_hidpads, hid);
++    if (!*link) link = hidpad_link(&g_hidpads_gc, hid);
+     if (!*link) return;
+     hid_pad *d = *link; *link = d->next;
+-    IOHIDDeviceRegisterInputValueCallback(hid, NULL, NULL);
+-    hidpad_detach(d);
++    if (d->used) hidpad_stop(d);
+     CFRelease(d->hid); free(d);
+ }
+ static void hidpad_start(void) {
+diff --git a/dm/host/tests/t_home_quit.c b/dm/host/tests/t_home_quit.c
+new file mode 100644
+index 0000000..ff11b7d
+--- /dev/null
++++ b/dm/host/tests/t_home_quit.c
+@@ -0,0 +1,86 @@
++// The Home button's hold and quit prompt (home_quit.h): the hold time, letting go early, A and B in the prompt, a button already held when it opens, Home closing it,
++// the settle phase that keeps the closing B from the game, losing the focus, the hold indicator, the switch, a front end's texts and the setting's log word
++#include "../home_quit.h"
++#include <stdio.h>
++
++static int checks, fails;
++#define CHECK(c, msg) do { checks++; if (!(c)) { fails++; fprintf(stderr, "FAIL: %s (line %d)\n", msg, __LINE__); } } while (0)
++
++int main(void) {
++    home_quit q = {0};
++    CHECK(hq_step(&q, 0, 0, 0, 0) == HQ_IDLE, "nothing pressed: idle");
++    CHECK(hq_step(&q, 1.0, 1, 0, 0) == HQ_HOLDING, "Home pressed: the hold starts");
++    CHECK(hq_ring(&q, 1.1) == -1, "a short press shows no indicator");
++    CHECK(hq_ring(&q, 1.0 + HQ_RING_S + (HQ_HOLD_S - HQ_RING_S) / 2) > 0.49 && hq_ring(&q, 1.0 + HQ_RING_S + (HQ_HOLD_S - HQ_RING_S) / 2) < 0.51, "half way the ring is half full");
++    CHECK(hq_step(&q, 2.9, 1, 0, 0) == HQ_HOLDING, "1.9 s: still holding");
++    CHECK(!hq_blocks_input(q.phase), "the game keeps its input while Home is held");
++    CHECK(hq_step(&q, 3.0, 1, 0, 0) == HQ_PROMPT, "2 s: the prompt opens");
++    CHECK(hq_ring(&q, 3.0) == -1, "the indicator goes when the prompt opens");
++    CHECK(hq_blocks_input(q.phase), "the prompt takes the controllers");
++    CHECK(hq_step(&q, 3.5, 0, 0, 0) == HQ_PROMPT, "letting go of Home keeps the prompt open");
++    CHECK(hq_step(&q, 4.0, 0, 1, 0) == HQ_QUIT, "A quits");
++    CHECK(hq_step(&q, 4.1, 0, 0, 0) == HQ_QUIT, "quit is final");
++    hq_cancel(&q);
++    CHECK(q.phase == HQ_QUIT, "a focus loss after quit changes nothing");
++
++    q = (home_quit){0};
++    hq_step(&q, 0, 1, 0, 0);
++    CHECK(hq_step(&q, 1.0, 0, 0, 0) == HQ_IDLE, "let go before 2 s: nothing happens");
++    CHECK(hq_step(&q, 5.0, 0, 0, 0) == HQ_IDLE, "and nothing later either");
++
++    q = (home_quit){0};
++    hq_step(&q, 0, 1, 0, 0); hq_step(&q, 2.0, 1, 0, 0);
++    CHECK(hq_step(&q, 2.5, 1, 0, 1) == HQ_SETTLE, "B closes the prompt");
++    CHECK(hq_blocks_input(q.phase), "the B that closed it does not reach the game");
++    CHECK(hq_step(&q, 2.6, 1, 0, 0) == HQ_SETTLE, "Home still down: still settling");
++    CHECK(hq_step(&q, 2.7, 0, 0, 0) == HQ_IDLE, "all up: the game has the controllers again");
++    CHECK(hq_step(&q, 2.8, 1, 0, 0) == HQ_HOLDING, "a new press starts a new hold");
++
++    q = (home_quit){0};
++    hq_step(&q, 0, 1, 1, 1);
++    CHECK(hq_step(&q, 2.0, 1, 1, 1) == HQ_PROMPT, "A and B held through the hold: the prompt opens");
++    CHECK(hq_step(&q, 2.1, 1, 1, 1) == HQ_PROMPT, "an A or B already held when it opens does not count");
++    CHECK(hq_step(&q, 2.2, 1, 0, 1) == HQ_PROMPT, "A released, B still held");
++    CHECK(hq_step(&q, 2.3, 1, 1, 1) == HQ_QUIT, "A pressed again quits");
++
++    q = (home_quit){0};
++    hq_step(&q, 0, 1, 0, 0); hq_step(&q, 2.0, 1, 0, 0);
++    CHECK(hq_step(&q, 2.1, 1, 0, 0) == HQ_PROMPT, "Home still held from the hold does not close it");
++    hq_step(&q, 2.2, 0, 0, 0);
++    CHECK(hq_step(&q, 2.3, 1, 0, 0) == HQ_SETTLE, "a new press of Home closes it");
++
++    q = (home_quit){0};
++    hq_step(&q, 0, 1, 0, 0); hq_step(&q, 2.0, 1, 0, 0);
++    CHECK(hq_step(&q, 2.1, 0, 1, 1) == HQ_SETTLE, "A and B at once: the safe one wins");
++
++    q = (home_quit){0};
++    hq_step(&q, 0, 1, 0, 0); hq_step(&q, 2.0, 1, 0, 0);
++    hq_cancel(&q);
++    CHECK(q.phase == HQ_IDLE && !hq_blocks_input(q.phase), "a focus loss closes the prompt");
++    CHECK(hq_step(&q, 3.0, 1, 0, 0) == HQ_IDLE, "a Home held through the focus change needs a new press");
++    hq_step(&q, 3.1, 0, 0, 0);
++    CHECK(hq_step(&q, 3.2, 1, 0, 0) == HQ_HOLDING, "then a press holds again");
++
++    CHECK(hq_enabled(NULL) && hq_enabled("1") && hq_enabled(""), "on by default");
++    CHECK(!hq_enabled("0"), "DM_HOME_QUIT=0: off");
++
++    char out[64];
++    hq_text_line("Hold\nQuit Zelda?\nLost\nQuit\nCancel", HQ_TEXT_TITLE, "d", out, sizeof out);
++    CHECK(!strcmp(out, "Quit Zelda?"), "a line of the text");
++    hq_text_line("Hold\nQuit Zelda?\nLost\nQuit\nCancel", HQ_TEXT_CANCEL, "d", out, sizeof out);
++    CHECK(!strcmp(out, "Cancel"), "the last line");
++    hq_text_line("Hold\n\nLost", HQ_TEXT_TITLE, "Quit Mario?", out, sizeof out);
++    CHECK(!strcmp(out, "Quit Mario?"), "an empty line takes the default");
++    hq_text_line("Hold", HQ_TEXT_QUIT, "Quit", out, sizeof out);
++    CHECK(!strcmp(out, "Quit"), "a missing line takes the default");
++    hq_text_line(NULL, HQ_TEXT_HOLD, "Keep holding to quit", out, sizeof out);
++    CHECK(!strcmp(out, "Keep holding to quit"), "no text: the defaults");
++    char small[4]; hq_text_line("Abcdef", 0, "d", small, sizeof small);
++    CHECK(!strcmp(small, "Abc"), "a long line is cut to the buffer");
++
++    CHECK(!strcmp(hq_in_app_name(0), "system") && !strcmp(hq_in_app_name(1), "app") && !strcmp(hq_in_app_name(-1), "unavailable"), "the setting's words");
++    CHECK(!strcmp(hq_in_app_name(0x7fffffffffffffffL), "off"), "disabled is off");
++
++    printf("t_home_quit: %d checks, %d failed\n", checks, fails);
++    return fails != 0;
++}
+diff --git a/dm/host/tests/t_pad_hid.c b/dm/host/tests/t_pad_hid.c
+index 48341c7..0774865 100644
+--- a/dm/host/tests/t_pad_hid.c
++++ b/dm/host/tests/t_pad_hid.c
+@@ -1,23 +1,56 @@
+ // Raw HID gamepads (pad_hid.h, GitHub issue #637): the default map and DM_HID_MAP, hat directions, axis scaling, the stick dead zone and analog triggers
+ #include <stdio.h>
+ #include "../pad_hid.h"
++#include "../home_quit.h"
+ 
+ static int checks, fails;
+ #define CHECK(c) do { checks++; if (!(c)) { fails++; printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); } } while (0)
+ 
+ int main(void) {
+     pad_hid h; int32_t s[4];
+-    pad_hid_init(&h, NULL);
++    pad_hid_init(&h, NULL, 0);
+     CHECK(pad_hid_buttons(&h) == 0);
+     h.buttons = 1u << 1; CHECK(pad_hid_buttons(&h) == DM_BTN_A);             // usage 2 (right) is A
+     h.buttons = 1u << 0; CHECK(pad_hid_buttons(&h) == DM_BTN_B);             // usage 1 (bottom) is B
+     h.buttons = 1u << 11 | 1u << 9; CHECK(pad_hid_buttons(&h) == (DM_BTN_PLUS | DM_BTN_ZR));
+-    pad_hid_init(&h, "a=1,B=2,bogus=3,ZR=99,X=,MINUS=13");
++    pad_hid_init(&h, "a=1,B=2,bogus=3,ZR=99,X=,MINUS=13", 0);
+     h.buttons = 1u << 0; CHECK(pad_hid_buttons(&h) == DM_BTN_A);
+     h.buttons = 1u << 12; CHECK(pad_hid_buttons(&h) == DM_BTN_MINUS);
+     h.buttons = 1u << 9; CHECK(pad_hid_buttons(&h) == DM_BTN_ZR);           // 99 skipped: the default stays
+     h.buttons = 1u << 4; CHECK(pad_hid_buttons(&h) == 0);                    // X= maps X to nothing
+-    pad_hid_init(&h, NULL);
++    pad_hid_init(&h, NULL, 1);                                               // Nintendo's report 0x3F: B A Y X L R ZL ZR - + LS RS
++    { static const uint64_t want[12] = {DM_BTN_B, DM_BTN_A, DM_BTN_Y, DM_BTN_X, DM_BTN_L, DM_BTN_R, DM_BTN_ZL, DM_BTN_ZR, DM_BTN_MINUS, DM_BTN_PLUS, DM_BTN_LS, DM_BTN_RS};
++      for (int b = 0; b < 12; b++) { h.buttons = 1u << b; CHECK(pad_hid_buttons(&h) == want[b]); } }
++    h.buttons = 1u << 12 | 1u << 13; CHECK(pad_hid_buttons(&h) == 0);        // Home and Capture are not Npad buttons here
++    { home_quit q = {0};
++      h.buttons = 1u << 13; CHECK(!pad_hid_home(&h));                         // Capture is not Home
++      h.buttons = 1u << 12; CHECK(hq_step(&q, 0, pad_hid_home(&h), 0, 0) == HQ_HOLDING);
++      CHECK(hq_step(&q, 2, pad_hid_home(&h), 0, 0) == HQ_PROMPT);
++      h.buttons = 1u << 0; CHECK(hq_step(&q, 3, pad_hid_home(&h), !!(pad_hid_buttons(&h) & DM_BTN_A), !!(pad_hid_buttons(&h) & DM_BTN_B)) == HQ_SETTLE);
++      CHECK(hq_blocks_input(q.phase));
++      h.buttons = 0; CHECK(hq_step(&q, 4, pad_hid_home(&h), 0, 0) == HQ_IDLE);
++      h.buttons = 1u << 12; hq_step(&q, 5, pad_hid_home(&h), 0, 0); hq_step(&q, 7, pad_hid_home(&h), 0, 0);
++      h.buttons = 1u << 1; CHECK(hq_step(&q, 8, pad_hid_home(&h), !!(pad_hid_buttons(&h) & DM_BTN_A), 0) == HQ_QUIT); }
++    pad_hid_init(&h, "X=13", 1); h.buttons = 1u << 12; CHECK(pad_hid_buttons(&h) == DM_BTN_X);   // DM_HID_MAP still replaces entries
++    pad_hid_init(&h, NULL, 1);                                               // a raw stick, as the NANO's: rests at -0.08, reaches 0.78 either way
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.08f)) < 1e-6f);
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, 0.27f) - 0.5f) < 1e-5f);          // half of the first reach
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, 0.70f) - 1) < 1e-5f && fabsf(pad_hid_raw_axis(&h, PH_X, 0.31f) - 0.5f) < 1e-5f);   // past it the reach grows
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.78f) + 1) < 1e-5f);            // full on both sides, though the rest is off centre
++    CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.08f)) < 1e-6f);
++    CHECK(pad_hid_raw_axis(&h, PH_Y, 0.9f) == 1 && h.rest[PH_Y] == 0);       // held while connecting: not a rest
++    pad_hid_init(&h, NULL, 0); CHECK(!h.raw);
++    { uint8_t r[PAD_HID_LIGHTS_SIZE]; pad_hid_lights(r, 0); CHECK(r[0] == 0x01 && r[2] == 0x00 && r[3] == 0x01 && r[9] == 0x40 && r[10] == 0x30 && r[11] == 0x1 && r[12] == 0 && r[48] == 0);
++      pad_hid_lights(r, 3); CHECK(r[11] == 0xF); pad_hid_lights(r, 7); CHECK(r[11] == 0x6); }   // players 1, 4 and 8, as the console lights them
++    { const char *pads[3] = {"Lic Pro Controller", "Xbox Wireless Controller", "Lic Pro Controller"}, *one[1] = {"Xbox Wireless Controller"}, *other[1] = {"Gamepad"}, *two[2] = {"Gamepad", "Lic Pro Controller"};
++      uint8_t raw[3];
++      pad_hid_unlisted(pads, 1, NULL, 0, raw); CHECK(raw[0] == 1);           // nothing listed: only raw HID reads it
++      pad_hid_unlisted(pads, 2, one, 1, raw); CHECK(raw[0] == 1 && raw[1] == 0);   // listed by name: the other pad is the one GameController left out
++      pad_hid_unlisted(pads + 1, 1, one, 1, raw); CHECK(raw[0] == 0);
++      pad_hid_unlisted(pads, 1, other, 1, raw); CHECK(raw[0] == 0);          // a controller no name matched may be this pad: never read twice
++      pad_hid_unlisted(pads, 3, two, 2, raw); CHECK(raw[0] == 0 && raw[1] == 0 && raw[2] == 1);   // one by name, one spare, the third left out
++      pad_hid_unlisted(pads, 3, NULL, 0, raw); CHECK(raw[0] == 1 && raw[1] == 1 && raw[2] == 1); }
++    pad_hid_init(&h, NULL, 0);
+     CHECK(pad_hid_hat(1, 1, 8) == 0 && pad_hid_hat(0, 1, 8) == -1 && pad_hid_hat(8, 0, 7) == -1 && pad_hid_hat(15, 0, 15) == -1);
+     h.hat = pad_hid_hat(4, 1, 8); CHECK(pad_hid_buttons(&h) == (DM_BTN_DOWN | DM_BTN_RIGHT));
+     CHECK(pad_hid_axis_of(1, 0x30) == PH_X && pad_hid_axis_of(1, 0x35) == PH_RZ && pad_hid_axis_of(2, 0xC5) == PH_BRAKE && pad_hid_axis_of(1, 0x39) == -1);
+diff --git a/docs/agents/symptoms.md b/docs/agents/symptoms.md
+index 762a206..4af8afd 100644
+--- a/docs/agents/symptoms.md
++++ b/docs/agents/symptoms.md
+@@ -197,6 +197,7 @@ One line per symptom in the [subsystem references](../reference/): what you see
+ - with a controller connected (a DualShock 4 here), `DM_KEYS` and `DM_CTL` presses are logged (`DM_KEYS: … press …`) but the game does not react to them, or only now and then; without the controller the same script works. → [Scripted presses on a path of their own](../reference/services.md#scripted-presses-on-a-path-of-their-own)
+ - taps in handheld mode do nothing, though the game reads the touch screen (the title's PRESS ANY BUTTON, the menus' cards). → [Touch gestures recognized from the touch points](../reference/services.md#touch-gestures-recognized-from-the-touch-points)
+ - on the Mac, the mouse pointer stays over the game picture while playing with a controller or the keyboard, in a window and in fullscreen (issue #675). → [Mac pointer stays over the game](../reference/services.md#mac-pointer-stays-over-the-game)
++- on the Mac, a Bluetooth pad that System Settings shows as connected does nothing in the game, and the log has no `controller '…' connected` line for it. A PowerA NANO pairs as `Lic Pro Controller`, HID vendor and product 0, and its four lights keep running in a chase. → [Bluetooth pad macOS shows as connected gets no input](../reference/services.md#bluetooth-pad-macos-shows-as-connected-gets-no-input)
+ - the Mac dims or turns off its display and can reach the lock screen while the player is using a controller, in a window or in fullscreen. → [Mac display sleep during controller play](../reference/services.md#mac-display-sleep-during-controller-play)
+ - the first boot aborted in `hid::GetMouseState` (the SDK's mouse resource was never initialized). → [Mouse, keyboard and key code maps](../reference/services.md#mouse-keyboard-and-key-code-maps)
+ - the first boot crashed in `hid::detail::SetPalmaBoostMode`, a null read at `sdk+0x238eb0` (the hid service never opened). → [Poké Ball Plus (Palma)](../reference/services.md#poké-ball-plus-palma)
+diff --git a/docs/reference/services.md b/docs/reference/services.md
+index 5541257..ff6649d 100644
+--- a/docs/reference/services.md
++++ b/docs/reference/services.md
+@@ -379,6 +379,14 @@ Most service calls can be found before they crash, before the first boot or the
+ - **Check:** with the pointer over the game, a controller button or the keyboard hides it; moving the mouse shows it; over the title bar, or with another app active, it stays.
+ - **Found on:** every game on the Mac (general); [PR #584](https://github.com/seedds/nxnative/pull/584).
+ 
++### Bluetooth pad macOS shows as connected gets no input
++
++- **Symptom:** on the Mac, a Bluetooth pad that System Settings shows as connected does nothing in the game, and the log has no `controller '…' connected` line for it. A PowerA NANO pairs as `Lic Pro Controller`, HID vendor and product 0, and its four lights keep running in a chase.
++- **Cause:** `+[GCController supportsHIDDevice:]` answers whether a device might be a game controller, not whether GameController lists it. macOS gives a HID gamepad with a pad's elements the fallback personality `Standard MFi Controller` in `AppleGameControllerPersonality.kext`, which sets `GameControllerSupport`, so the call says yes; `gamecontrollerd` still never listed this pad (`GCController.controllers` stayed empty in a foreground app, and the HID device has `GameControllerSupportedHIDDevice` = No). `pad_hid_mac.h` took the yes as a promise and skipped the device, so neither path read it, although it sent reports the whole time. Such a pad is a Pro Controller clone: its report descriptor is Nintendo's, it stays in the simple report `0x3F`, and that report's buttons are numbered differently from the default 8BitDo map.
++- **Fix (resolved):** a device `supportsHIDDevice:` says yes to waits 3 seconds for its `GCController` (`hidpad_settle`, `pad_hid_unlisted`): a listed controller of its name, or one no pad's name matched, covers it, and otherwise it is read as raw HID (log line `GameController does not list it, reading it as a HID gamepad`). One that GameController lists later goes back to it (`GameController lists it now`), so no pad is read twice. Buttons that come in report `0x3F` take that report's numbering, read from the device's elements and not from its name or vendor. Report `0x3F` carries the sticks raw: the NANO's rest 9 and 11% off centre and reach about 0.78 of the axis from there, so a full push gave 61 to 74% and a slightly worse rest would have drifted; `pad_hid_raw_axis` measures each axis from its first value and scales it by the reach seen so far, which starts at 0.7 and only grows. Such a pad also gets its player on its lights, which it chases until a console gives it one (`pad_hid_lights`: subcommand `0x30` of output report `0x01`; the NANO answers `80 30` in report `0x21` and stays in report `0x3F`). `DM_HID_LOG=1` and `DM_HID_MAP` work as for any raw HID pad.
++- **Limits:** report `0x3F` carries no motion, and this path sends the pad no rumble, so such a pad has no gyro or rumble here. The pads this reads through GameController were not re-tested on real hardware; `t_pad_hid.c` checks the matching.
++- **Found on:** a PowerA NANO over Bluetooth on macOS 27.2; it is not specific to a game. Played in [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md), on a host from before `pad_hid_raw_axis`; the scaled sticks were checked on the pad in a small harness around `pad_hid_mac.h`, not yet in a game.
++
+ ### Mac display sleep during controller play
+ 
+ - **Symptom:** the Mac dims or turns off its display and can reach the lock screen while the player is using a controller, in a window or in fullscreen.
