@@ -144,7 +144,10 @@ Pour installer, ouvrir `dist/NXNative Dashboard.dmg` et glisser l’app vers
 **Applications**. `WorkspacePath` doit désigner ce dossier NXNative, avec son
 `.venv` et `tools/library.py`. L’app et son DMG sont propres à ce Mac et à ce
 dossier ; les préférences enregistrées dans le navigateur ne sont pas migrées.
-La signature est ad hoc : l’app n’est ni notariée ni distribuée par Apple.
+La signature est ad hoc, sans Developer ID : l’app n’est ni notariée ni
+distribuée par Apple. Si macOS bloque son ouverture, aller dans **Réglages
+Système → Confidentialité et sécurité**, puis choisir **Ouvrir quand même**
+pour cette app. Ne pas désactiver Gatekeeper.
 
 ## Live build monitor
 

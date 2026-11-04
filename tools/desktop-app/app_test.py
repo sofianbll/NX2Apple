@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Recette du cycle de vie de l'app construite, sans toucher aux autres processus."""
 
+import ctypes
 import os
 from pathlib import Path
 import signal
@@ -127,59 +128,109 @@ def wait_for_server(app_pid):
     return server_pid
 
 
-def window_text(pid):
-    script = r'''
-on textFromElement(uiElement)
-    set textResult to ""
-    tell application "System Events"
-        try
-            set elementValue to value of uiElement
-            if class of elementValue is not list then set textResult to elementValue as text
-        end try
-        try
-            set children to UI elements of uiElement
-            repeat with childElement in children
-                set textResult to textResult & linefeed & my textFromElement(childElement)
-            end repeat
-        end try
-    end tell
-    return textResult
-end textFromElement
+_AX = ctypes.CDLL("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+_CF = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+_AX.AXUIElementCreateApplication.argtypes = [ctypes.c_int32]
+_AX.AXUIElementCreateApplication.restype = ctypes.c_void_p
+_AX.AXUIElementCopyAttributeValue.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)
+]
+_AX.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
+_CF.CFRelease.argtypes = [ctypes.c_void_p]
+_CF.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+_CF.CFStringCreateWithCString.restype = ctypes.c_void_p
+_CF.CFStringGetLength.argtypes = [ctypes.c_void_p]
+_CF.CFStringGetLength.restype = ctypes.c_long
+_CF.CFStringGetMaximumSizeForEncoding.argtypes = [ctypes.c_long, ctypes.c_uint32]
+_CF.CFStringGetMaximumSizeForEncoding.restype = ctypes.c_long
+_CF.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+_CF.CFStringGetCString.restype = ctypes.c_bool
+_CF.CFGetTypeID.argtypes = [ctypes.c_void_p]
+_CF.CFGetTypeID.restype = ctypes.c_ulong
+_CF.CFStringGetTypeID.restype = ctypes.c_ulong
+_CF.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+_CF.CFArrayGetCount.restype = ctypes.c_long
+_CF.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
+_CF.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
 
-tell application "System Events"
-    set targetProcess to missing value
-    set candidateProcesses to every process whose bundle identifier is "BUNDLE_ID_PLACEHOLDER"
-    repeat with candidateProcess in candidateProcesses
-        try
-            if (unix id of candidateProcess) is PID_PLACEHOLDER then
-                set targetProcess to candidateProcess
-                exit repeat
-            end if
-        end try
-    end repeat
-    if targetProcess is missing value then return ""
-    if (count windows of targetProcess) is 0 then return ""
-    return ("PID=" & (unix id of targetProcess) & linefeed & my textFromElement(window 1 of targetProcess))
-end tell
-'''.replace("PID_PLACEHOLDER", str(pid)).replace("BUNDLE_ID_PLACEHOLDER", BUNDLE_ID)
-    return command("/usr/bin/osascript", "-e", script, timeout=5)
+
+def ax_attribute(element, name):
+    name_ref = _CF.CFStringCreateWithCString(None, name.encode(), 0x08000100)
+    check(name_ref, f"Création du nom Accessibility {name}")
+    value = ctypes.c_void_p()
+    error = _AX.AXUIElementCopyAttributeValue(element, name_ref, ctypes.byref(value))
+    _CF.CFRelease(name_ref)
+    if error != 0:
+        if value:
+            _CF.CFRelease(value)
+        if error in (-25205, -25212):  # Attribut absent ou sans valeur.
+            return None
+        check(False, f"Lecture Accessibility {name} : erreur {error}")
+    return value if value else None
+
+
+def ax_text(element):
+    parts = []
+    value = ax_attribute(element, "AXValue")
+    if value:
+        try:
+            if _CF.CFGetTypeID(value) == _CF.CFStringGetTypeID():
+                size = _CF.CFStringGetMaximumSizeForEncoding(
+                    _CF.CFStringGetLength(value), 0x08000100
+                ) + 1
+                buffer = ctypes.create_string_buffer(size)
+                check(
+                    _CF.CFStringGetCString(value, buffer, size, 0x08000100),
+                    "Conversion d'une valeur Accessibility en texte",
+                )
+                parts.append(buffer.value.decode())
+        finally:
+            _CF.CFRelease(value)
+
+    children = ax_attribute(element, "AXChildren")
+    if children:
+        try:
+            for index in range(_CF.CFArrayGetCount(children)):
+                child = _CF.CFArrayGetValueAtIndex(children, index)
+                text = ax_text(child)
+                if text:
+                    parts.append(text)
+        finally:
+            _CF.CFRelease(children)
+    return "\n".join(parts)
+
+
+def window_text(pid):
+    application = _AX.AXUIElementCreateApplication(pid)
+    check(application, f"Création de la racine Accessibility du PID {pid}")
+    try:
+        windows = ax_attribute(application, "AXWindows")
+        if not windows:
+            return ""
+        try:
+            if _CF.CFArrayGetCount(windows) == 0:
+                return ""
+            window = _CF.CFArrayGetValueAtIndex(windows, 0)
+            return f"PID={pid}\n{ax_text(window)}"
+        finally:
+            _CF.CFRelease(windows)
+    finally:
+        _CF.CFRelease(application)
 
 
 def assert_conflict_visible(pid):
     deadline = time.monotonic() + 12
-    last_result = None
+    last_text = ""
     while time.monotonic() < deadline:
         check(pid_alive(pid), "L'app s'est terminée au lieu d'afficher le conflit")
-        last_result = window_text(pid)
-        if (last_result.returncode == 0
-                and last_result.stdout.startswith(f"PID={pid}\n")
-                and CONFLICT_TEXT in last_result.stdout):
+        try:
+            last_text = window_text(pid)
+        except RuntimeError as error:
+            last_text = str(error)
+        if last_text.startswith(f"PID={pid}\n") and CONFLICT_TEXT in last_text:
             return
         time.sleep(0.2)
-    detail = ""
-    if last_result is not None:
-        detail = f" ; dernière lecture UI : {last_result.stdout} {last_result.stderr}"
-    raise RuntimeError("Le conflit de port n'est pas visible" + detail)
+    raise RuntimeError(f"Le conflit de port n'est pas visible ; dernière lecture UI : {last_text}")
 
 
 def quit_app(pid):
