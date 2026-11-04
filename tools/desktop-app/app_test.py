@@ -136,6 +136,10 @@ _AX.AXUIElementCopyAttributeValue.argtypes = [
     ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)
 ]
 _AX.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
+_AX.AXUIElementSetAttributeValue.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
+]
+_AX.AXUIElementSetAttributeValue.restype = ctypes.c_int32
 _CF.CFRelease.argtypes = [ctypes.c_void_p]
 _CF.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
 _CF.CFStringCreateWithCString.restype = ctypes.c_void_p
@@ -148,6 +152,8 @@ _CF.CFStringGetCString.restype = ctypes.c_bool
 _CF.CFGetTypeID.argtypes = [ctypes.c_void_p]
 _CF.CFGetTypeID.restype = ctypes.c_ulong
 _CF.CFStringGetTypeID.restype = ctypes.c_ulong
+_CF.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+_CF.CFBooleanGetValue.restype = ctypes.c_bool
 _CF.CFArrayGetCount.argtypes = [ctypes.c_void_p]
 _CF.CFArrayGetCount.restype = ctypes.c_long
 _CF.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
@@ -198,6 +204,33 @@ def ax_text(element):
         finally:
             _CF.CFRelease(children)
     return "\n".join(parts)
+
+
+def window_minimized(pid, minimized=None):
+    application = _AX.AXUIElementCreateApplication(pid)
+    check(application, f"Création de la racine Accessibility du PID {pid}")
+    try:
+        windows = ax_attribute(application, "AXWindows")
+        check(windows and _CF.CFArrayGetCount(windows) > 0, "Fenêtre Accessibility absente")
+        try:
+            window = _CF.CFArrayGetValueAtIndex(windows, 0)
+            if minimized is None:
+                value = ax_attribute(window, "AXMinimized")
+                check(value, "Attribut AXMinimized absent")
+                try:
+                    return bool(_CF.CFBooleanGetValue(value))
+                finally:
+                    _CF.CFRelease(value)
+            name_ref = _CF.CFStringCreateWithCString(None, b"AXMinimized", 0x08000100)
+            boolean = ctypes.c_void_p.in_dll(_CF, "kCFBooleanTrue" if minimized else "kCFBooleanFalse")
+            error = _AX.AXUIElementSetAttributeValue(window, name_ref, boolean)
+            _CF.CFRelease(name_ref)
+            check(error == 0, f"Modification AXMinimized : erreur {error}")
+            return None
+        finally:
+            _CF.CFRelease(windows)
+    finally:
+        _CF.CFRelease(application)
 
 
 def window_text(pid):
@@ -322,6 +355,13 @@ def run(app_bundle):
         get("/status")
         assert_server(app_pid, server_pid)
         print("PASS ouverture : listener enfant, page et GET /status 200")
+        window_minimized(app_pid, True)
+        wait_until("fenêtre miniaturisée", lambda: window_minimized(app_pid), 2)
+        result = command("/usr/bin/open", str(app_bundle))
+        check(result.returncode == 0, f"Réouverture LaunchServices : {result.stderr}")
+        wait_until("fenêtre restaurée après réouverture", lambda: not window_minimized(app_pid), 3)
+        assert_server(app_pid, server_pid)
+        print("PASS réouverture : la fenêtre miniaturisée est restaurée, serveur inchangé")
         quit_app(app_pid)
         wait_until("serveur arrêté après Quitter", lambda: not pid_alive(server_pid), 5)
         wait_until("port libre après Quitter", lambda: not listener_pids() and not port_accepts_connections(), 5)
