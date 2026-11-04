@@ -10,11 +10,11 @@ Bibliothèque Cinéma sur `127.0.0.1:8767` : pochettes, catalogue, bouton Jouer,
 ## v0.1.1 — Ménage
 
 - [ ] Relais et Goal archivés dans `docs/archive/` ; `CHANGELOG.md` et cette feuille de route à la racine.
-- [ ] Un `game.json` ou un état JSON abîmé n'arrête plus tout le dashboard.
-- [ ] « Verrou occupé » distingué des autres erreurs.
-- [ ] `make test` échoue clairement si Node manque.
-- [ ] Sonde R/ZR rangée dans le dépôt (elle était dans un dossier temporaire).
-- [ ] README à jour (tests, `protos/` encore utilisé à l'exécution).
+- [x] Un `game.json` ou un état JSON abîmé n'arrête plus tout le dashboard.
+- [x] « Verrou occupé » distingué des autres erreurs.
+- [x] `make test` échoue clairement si Node manque.
+- [x] Sonde R/ZR rangée dans le dépôt (elle était dans un dossier temporaire).
+- [x] README à jour (tests, `protos/` encore utilisé à l'exécution).
 - [ ] `make test` vert, tag `v0.1.1`.
 
 ## v0.2.0 — App Mac (`NXNative Dashboard.app`, DMG)

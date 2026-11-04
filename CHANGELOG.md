@@ -6,6 +6,11 @@ Versions selon `ROADMAP.md`. Dates en Europe/Paris.
 
 - Relais de sessions et Goal nocturne archivés dans `docs/archive/`.
 - Ajout de `ROADMAP.md` et de ce changelog.
+- Les `game.json` et états JSON corrompus ou incomplets ne bloquent plus tout le dashboard.
+- Le message de verrou occupé est réservé aux vrais conflits d’opération.
+- `make test` exige Node.js et affiche les sorties des tests JavaScript en cas d’échec.
+- Ajout de la sonde manette R/ZR en lecture seule et de sa cible `make rzr-probe`.
+- README corrigé pour les tests, les ressources `protos/` utilisées et la taille des visuels.
 
 ## [0.1.0] — 2026-11-04
 

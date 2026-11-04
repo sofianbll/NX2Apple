@@ -62,7 +62,7 @@ with a tested version available. It does not try experimental profiles.
 The previous `library/StardewValley/` was migrated without discarding its cache.
 Every language edition with a different title ID is a separate game; all six
 FireRed editions were retained. The controller fix remains in the engine checkout.
-Only project sources, documentation and small artwork are tracked in Git. Games,
+Only project sources, documentation and about 22 MB of artwork are tracked in Git. Games,
 keys, applications, the upstream checkout, local environments, outputs, logs,
 caches and OpenChamber files stay ignored.
 
@@ -128,7 +128,7 @@ packages or engine changes. A missing app still needs a working toolchain.
 
 ```sh
 make clean GAME=stardew     # Deletes only that game's .build cache, never saves/apps
-make test                  # Synthetic importer, incrementality and progress checks
+make test                  # Python tool checks plus both Node dashboard test suites
 ```
 
 ## Live build monitor
@@ -202,9 +202,11 @@ nor between the `127.0.0.1` and `localhost` origins.
 v0.1.0 ships the **Cinéma** view only, built from the shared Web Components
 over the live `/status` and `/catalog` data. The server serves the components at
 `/nx-components.js` and the stylesheet at `/nx-shared.css` (mapped from
-`protos/nx-shared.css`). Its percentage describes only the current build stage,
-never the entire build. The **Console** view (square-tile carousel, 540×116 dock)
-is planned for v0.2; its prototypes are kept in `tools/build-monitor/protos/`
+`protos/nx-shared.css`). The live dashboard also serves `avatar.png`,
+`hero-background.png` and `stardew-logo.png` from `protos/cinema-block-1-assets/`;
+keep `protos/` because those files are used at runtime. Its percentage describes
+only the current build stage, never the entire build. The **Console** view
+(square-tile carousel, 540×116 dock) is planned for v0.2; its prototypes are kept in `tools/build-monitor/protos/`
 and are not wired to the dashboard.
 
 For long jobs, keep the build queue and dashboard in the detached `nxnative`
@@ -228,8 +230,8 @@ request: images and code load from `127.0.0.1`. The only external navigation is 
 link you added yourself, opened by your click. The server serves only
 allowlisted image files, not arbitrary local files. This is artwork only: it
 implies no import, no ROM and no gameplay validation. No frontend dependencies
-were added. `make test` also checks the dashboard logic when Node
-is available; importer and progress tests remain Python-only.
+were added. `make test` requires Node.js and checks both dashboard JavaScript
+suites; importer and progress tests remain Python-only.
 
 ## Play
 
@@ -242,6 +244,9 @@ that show hidden files; showing hidden files in Finder also reveals them.
 Open the finished `.app` in `apps/` from Finder, choose its settings and play.
 You do not need to source `env.sh` or rebuild for every session. A compatible
 controller is optional. Pin a finished game to the Dock if useful.
+For a read-only PowerA R/ZR check, run `make rzr-probe` to compile and launch the probe.
+When prompted, press and release physical **R**, then **ZR** (20 seconds each).
+The probe prints the observed button usages and never writes to the controller.
 
 Default Mac locations, kept separate from replaceable application bundles:
 
