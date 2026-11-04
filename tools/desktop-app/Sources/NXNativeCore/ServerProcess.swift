@@ -49,10 +49,17 @@ public final class ServerProcess: @unchecked Sendable {
     }
 
     public func start() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                self.beginStart(continuation: continuation)
+        do {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    self.beginStart(continuation: continuation)
+                }
             }
+        } catch {
+            if let error = error as? ServerProcessError, case .readinessTimeout = error {
+                await stop()
+            }
+            throw error
         }
     }
 

@@ -113,12 +113,46 @@ final class ServerProcessTests: XCTestCase {
             }
         }
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 14.5)
-        XCTAssertLessThan(Date().timeIntervalSince(started), 17)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 19)
 
         await server.stop()
         XCTAssertLessThan(Date().timeIntervalSince(started), 19)
         XCTAssertTrue(try fixture.waitForExit())
         XCTAssertTrue(try fixture.signalNames().contains("SIGTERM"))
+    }
+
+    func testReadinessTimeoutStopsOldProcessBeforeImmediateRetry() async throws {
+        let fixture = try FakeWorkspace(mode: .bindAndHangBeforeReady)
+        let first = ServerProcess(
+            workspace: fixture.workspace,
+            port: fixture.port,
+            logURL: fixture.logURL,
+            readinessTimeout: 0.1
+        )
+        defer { try? fixture.cleanUp() }
+
+        do {
+            try await first.start()
+            XCTFail("Le premier serveur ne devait pas annoncer sa disponibilité")
+        } catch let error as ServerProcessError {
+            guard case .readinessTimeout = error else {
+                return XCTFail("Erreur inattendue : \(error)")
+            }
+        }
+
+        let oldPID = try fixture.pid()
+        XCTAssertFalse(try fixture.isAlive(), "L'ancien PID doit être arrêté avant de permettre le retry")
+
+        try fixture.switchToReady()
+        let second = ServerProcess(
+            workspace: fixture.workspace,
+            port: fixture.port,
+            logURL: fixture.logURL
+        )
+        try await second.start()
+        XCTAssertNotEqual(try fixture.pid(), oldPID)
+        XCTAssertTrue(try fixture.isAlive())
+        await second.stop()
     }
 
     func testServerIgnoringEOFAndSIGTERMIsKilledWithoutTouchingWitness() async throws {

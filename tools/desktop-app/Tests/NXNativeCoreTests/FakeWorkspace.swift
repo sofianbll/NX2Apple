@@ -6,6 +6,7 @@ final class FakeWorkspace: @unchecked Sendable {
         case eof
         case failBeforeReady
         case hangBeforeReady
+        case bindAndHangBeforeReady
         case ignoreEOF
         case ignoreEOFAndSIGTERM
     }
@@ -105,6 +106,14 @@ final class FakeWorkspace: @unchecked Sendable {
         return String(cString: path)
     }
 
+    func switchToReady() throws {
+        try Self.script(records: records, port: port, mode: .eof).write(
+            to: workspace.appendingPathComponent("tools/library.py"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
     func cleanUp() throws {
         try? forceStop()
         try FileManager.default.removeItem(at: root)
@@ -131,6 +140,15 @@ final class FakeWorkspace: @unchecked Sendable {
             """
         case .hangBeforeReady:
             behavior = "while True:\n    time.sleep(1)"
+        case .bindAndHangBeforeReady:
+            behavior = """
+            listener = socket.socket()
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(("127.0.0.1", \(port)))
+            listener.listen()
+            while True:
+                time.sleep(1)
+            """
         case .ignoreEOF, .ignoreEOFAndSIGTERM:
             behavior = readyAndWait(port: port)
         }
