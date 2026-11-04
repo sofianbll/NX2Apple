@@ -1,0 +1,12 @@
+{
+  "purpose": "Throwaway Cinema library prototype, visually accepted by Sofian on 2026-11-04. Static example statuses, not live build state. No production assets changed.",
+  "review": {"block": "cinema-library", "verdict": "validate", "note": "", "variant": "html", "scope": "Visual approval only. No dashboard integration authorized by this form."},
+  "reference": "../direction-a-cinema.png",
+  "crops": {
+    "zelda.png": {"x": 132, "y": 477, "width": 293, "height": 272},
+    "pokemon.png": {"x": 437, "y": 477, "width": 285, "height": 272},
+    "mario.png": {"x": 733, "y": 477, "width": 285, "height": 272},
+    "n64.png": {"x": 1031, "y": 477, "width": 285, "height": 272}
+  },
+  "limitation": "Cropped illustrations retain the mockup's baked status pixels, covered by opaque HTML badges in this visual prototype. Obtain clean standalone cover art before any production integration. These crops must not be used for changing live statuses."
+}

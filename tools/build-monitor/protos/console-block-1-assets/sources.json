@@ -1,0 +1,13 @@
+{
+  "reference": "direction-b-console.png (1360x768)",
+  "crops": {
+    "stardew.png": {"source": "direction-b-console.png", "x": 40, "y": 169, "width": 245, "height": 275, "note": "Provisional Stardew Valley cover crop - full artwork inside borders"},
+    "zelda.png": {"source": "direction-b-console.png", "x": 309, "y": 144, "width": 266, "height": 320, "note": "Zelda Link's Awakening cover - inside blue border"},
+    "pokemon.png": {"source": "direction-b-console.png", "x": 598, "y": 169, "width": 204, "height": 275, "note": "Provisional Pokémon FireRed cover crop - full artwork"},
+    "mariokart.png": {"source": "direction-b-console.png", "x": 820, "y": 169, "width": 205, "height": 275, "note": "Provisional Mario Kart 8 Deluxe cover crop - full artwork"},
+    "avatar.png": {"source": "direction-b-console.png", "x": 1203, "y": 27, "width": 44, "height": 44, "note": "Kirby avatar - circular"}
+  },
+  "block_id": "console-header-carousel",
+  "scope": "header + game carousel + caption under selected tile only",
+  "status": "provisional crops extracted from the reference; dimensions in pixels"
+}

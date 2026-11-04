@@ -1,0 +1,26 @@
+{
+  "stardew.jpg": {
+    "page": "https://www.nintendo.com/us/store/products/stardew-valley-switch/",
+    "image": "https://assets.nintendo.com/image/upload/c_limit,w_1400/f_jpg/q_85/store/software/switch/70010000001801/7aa9c6cf5e7d4cecf481f18b1d7a9d79e7aab85045b22203effb2dda409bc5b7"
+  },
+  "zelda.jpg": {
+    "page": "https://www.nintendo.com/us/store/products/the-legend-of-zelda-links-awakening-switch/",
+    "image": "https://assets.nintendo.com/image/upload/c_limit,w_1400/f_jpg/q_85/store/software/switch/70010000020033/df825d5fc6747b66b051f5d3ba6a412fe625ea7878b6a10c93bb8312195682b1"
+  },
+  "mario.jpg": {
+    "page": "https://www.nintendo.com/us/store/products/mario-kart-8-deluxe-switch/",
+    "image": "https://assets.nintendo.com/image/upload/c_limit,w_1400/f_jpg/q_85/store/software/switch/70010000000153/de697f487a36d802dd9a5ff0341f717c8486221f2f1219b675af37aca63bc453"
+  },
+  "pokemon.jpg": {
+    "page": "https://www.nintendo.com/en-gb/Games/Nintendo-Switch-download-software/Pokemon-FireRed-Version-3031207.html",
+    "image": "https://www.nintendo.com/eu/media/images/assets/nintendo_switch_games/pokemonfireredleafgreen/16x9_NSwitch_PokemonFireRed_UK_image1280w.jpg"
+  },
+  "stardew-scene.jpg": {
+    "page": "https://store.steampowered.com/app/413150/Stardew_Valley/",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/413150/ss_b887651a93b0525739049eb4194f633de2df75be.1920x1080.jpg"
+  },
+  "n64.jpg": {
+    "page": "https://www.nintendo.com/us/store/products/nintendo-64-nintendo-classics-switch/",
+    "image": "https://assets.nintendo.com/image/upload/c_limit,w_1400/f_jpg/q_85/store/software/switch/70010000046983/920b504d2e54f16bb7fcb76dcd56283bdcd1f695413848b478e631144013df13"
+  }
+}

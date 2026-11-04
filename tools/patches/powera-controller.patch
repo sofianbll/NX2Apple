@@ -1,0 +1,17 @@
+diff --git a/dm/host/pad_hid_mac.h b/dm/host/pad_hid_mac.h
+index b3b3212..c69a54f 100644
+--- a/dm/host/pad_hid_mac.h
++++ b/dm/host/pad_hid_mac.h
+@@ -40,9 +40,11 @@ static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
+     (void)ctx; (void)sender;
+     if (result != kIOReturnSuccess || IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDGCSyntheticDeviceKey)) == kCFBooleanTrue) return;
+     for (hid_pad *d = g_hidpads; d; d = d->next) if (d->hid == hid) return;
+-    if ([GCController supportsHIDDevice:hid]) return;   // front_mac.m reads it through its GCController (once per device: the call is not cheap)
+     NSNumber *vendor = (__bridge NSNumber *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDVendorIDKey)), *product = (__bridge NSNumber *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductIDKey));
+     int vid = vendor.intValue, pid = product.intValue;
++    // GameController claims some pads without IDs (PowerA "Lic Pro Controller", 0000:0000) but never lists them, so they are read here
++    // ponytail: IDs 0:0 as the signal; check GCController.controllers after connect if a claimed pad with real IDs goes missing too
++    if ((vid || pid) && [GCController supportsHIDDevice:hid]) return;   // front_mac.m reads it through its GCController (once per device: the call is not cheap)
+     hid_pad *d = calloc(1, sizeof *d); if (!d) { LOG("[RED] HID gamepad: cannot allocate device state"); return; }
+     pad_hid_init(&d->st, getenv("DM_HID_MAP"));
+     NSString *name = (__bridge NSString *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductKey));

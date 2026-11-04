@@ -1,0 +1,224 @@
+<!doctype html>
+<!-- THROWAWAY: review only console header + carousel + caption. No live state, persistence or real actions. -->
+<!-- Visual approval: Sofian, 2026-11-04, console-header-carousel, variant=html, no conditions. No dashboard integration authorized by this form. -->
+<!-- Run: python3 -m http.server 8769 --bind 127.0.0.1 --directory tools/build-monitor/protos -->
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prototype Console — en-tête et carrousel</title>
+<style>
+html,body{margin:0;background:transparent}*{box-sizing:border-box}[hidden]{display:none!important}
+.review{font-family:"Helvetica Neue",Arial,sans-serif;color:var(--foreground,#eef3f0);max-width:1360px;margin:0 auto}
+.tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}.tools p{font-size:.875rem;margin:0;color:var(--muted-foreground,#b9c3c6)}
+.tabs,.cycle{display:flex;gap:3px;border-radius:8px;background:var(--muted,#20282b);padding:4px}.tabs button,.cycle button{font:inherit;border:0;border-radius:5px;cursor:pointer;background:none;color:inherit;padding:9px 12px;font-size:.875rem}.tabs button[aria-pressed=true]{background:var(--foreground,#eef3f0);color:var(--background,#0a1115)}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #4acb40;outline-offset:4px}
+.frame{width:100%;aspect-ratio:1360/768;position:relative;overflow:hidden;border-radius:12px;background:#0b0f15}
+.canvas{--base:#0b0f15;--text:#f1f6f1;--green:#5fcf5f;--green-caption:#6ed36a;--blue-border:#3d8de0;--blue-glow:rgba(61,141,224,0.3);width:1360px;height:768px;transform-origin:top left;position:absolute;inset:0;color:var(--text);font-family:"Helvetica Neue",Arial,sans-serif;font-size:1rem;background:var(--base)}
+.reference{position:absolute;inset:0;width:1360px;height:768px;z-index:3;pointer-events:none}.reference img{width:100%;height:100%;display:block}
+
+/* Header */
+.header{position:absolute;top:0;left:0;right:0;height:90px;display:flex;align-items:center;justify-content:space-between;padding:8px 42px 0 40px}
+.header-left{display:flex;align-items:center;gap:16px}
+.gamepad-icon{width:38px;height:26px}
+.title{font-size:22px;font-weight:600;color:white;letter-spacing:.5px}
+.divider{position:absolute;left:36px;right:36px;bottom:0;height:1px;background:rgba(255,255,255,0.1)}
+.header-right{display:flex;align-items:center;gap:16px}
+.user-info{display:flex;align-items:center;gap:12px}
+.user-avatar{width:44px;height:44px;border-radius:50%;overflow:hidden}
+.user-avatar img{width:100%;height:100%;display:block}
+.user-name{font-size:16px;color:white}
+.user-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--green,#5fcf5f)}
+.online-dot{width:8px;height:8px;background:var(--green,#5fcf5f);border-radius:50%}
+
+/* Carousel */
+.tile{position:absolute;top:167px;height:279px;padding:0;border:1px solid #ffffff1f;border-radius:14px;overflow:hidden;background:#0a1418;cursor:pointer;transition:transform .2s ease}
+.tile[data-game=stardew]{left:38px;width:249px}.tile[data-game=zelda]{left:322px;width:240px}.tile[data-game=pokemon]{left:596px;width:208px}.tile[data-game=mariokart]{left:818px;width:209px}
+.tile img{display:block;width:100%;height:100%;object-fit:cover}
+.tile:hover{border-color:#ffffff4d}
+.tile.selected{z-index:1;transform:translateY(-6px) scale(1.118);outline:3.5px solid var(--blue-border);outline-offset:3px;box-shadow:0 0 24px 8px var(--blue-glow)}
+
+/* Caption */
+.caption{position:absolute;top:478px;width:360px;text-align:center;pointer-events:none}
+.caption h1,.caption h2{font-size:22px;font-weight:600;color:white;margin:0;line-height:30px}
+.caption .ready{display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;color:var(--green-caption,#6ed36a);margin-top:12px}
+.caption .ready svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8}
+
+.cycle{align-items:center;justify-content:center;gap:10px;border-radius:999px;width:fit-content;padding:4px 8px;margin:14px auto 0;font-size:.8rem}
+.cycle button{padding:7px 11px}
+.notes{font-size:.8rem;line-height:1.6;color:var(--muted-foreground,#9eaeb1);margin:12px 0 0;max-width:80ch}
+.feedback{display:grid;gap:10px;margin-top:20px;font-size:.875rem}
+.feedback label{display:grid;gap:7px}
+.feedback select,.feedback textarea{font:inherit;color:var(--foreground,#eef3f0);background:var(--muted,#20282b);border:1px solid var(--border,#364346);padding:10px 12px;border-radius:6px;width:100%}
+.feedback textarea{min-height:72px;resize:vertical}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.send,.export{font:inherit;padding:11px 16px;border-radius:6px;cursor:pointer;width:fit-content}
+.send{border:0;background:var(--foreground,#eef3f0);color:var(--background,#091115)}
+.send:disabled{opacity:.55;cursor:default}
+.export{border:1px solid var(--border,#364346);color:inherit;background:transparent}
+@media(max-width:500px){.tools p{font-size:.8rem}.tabs button{padding:8px 10px;font-size:.8rem}.notes{font-size:.75rem}}@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style></head><body><main class="review">
+<div class="tools"><p>Bloc Console · En-tête et carrousel</p><div class="tabs" role="group" aria-label="Comparer avec l'image validée"><button data-view="html" type="button" aria-pressed="true">Prototype HTML</button><button data-view="reference" type="button" aria-pressed="false">Référence</button><button data-view="overlay" type="button" aria-pressed="false">Superposer</button></div></div>
+<div class="frame" id="frame"><div class="canvas" id="canvas">
+  <header class="header">
+    <div class="header-left">
+      <svg class="gamepad-icon" viewBox="0 0 40 28" aria-hidden="true"><path fill="#fff" d="M10 3h20c5 0 8 4 9 11s-1 12-5 12c-3 0-5-3-7-6H13c-2 3-4 6-7 6-4 0-6-5-5-12S5 3 10 3Z"/><path d="M11 10v8M7 14h8" stroke="#0b0f15" stroke-width="2.4" stroke-linecap="round"/><circle cx="28" cy="11" r="1.8" fill="#e5484d"/><circle cx="32" cy="15" r="1.8" fill="#3d8de0"/></svg>
+      <h1 class="title">GameShelf</h1>
+    </div>
+    <div class="header-right">
+      <div class="user-info">
+        <div class="user-avatar"><img src="console-block-1-assets/avatar.png" alt="Avatar Kirby"></div>
+        <span style="display:grid;gap:4px"><span class="user-name">joueuse</span>
+        <span class="user-status"><span class="online-dot" aria-hidden="true"></span>En ligne</span></span>
+      </div>
+    </div>
+    <div class="divider"></div>
+  </header>
+  
+  <div class="carousel" id="carousel">
+    <button type="button" class="tile" data-game="stardew" data-title="Stardew Valley" aria-label="Stardew Valley" aria-pressed="false">
+      <img src="console-block-1-assets/stardew.png" alt="Stardew Valley" draggable="false">
+    </button>
+    <button type="button" class="tile selected" data-game="zelda" data-title="The Legend of Zelda|Link's Awakening" aria-label="The Legend of Zelda Link's Awakening" aria-pressed="true">
+      <img src="console-block-1-assets/zelda.png" alt="The Legend of Zelda Link's Awakening" draggable="false">
+    </button>
+    <button type="button" class="tile" data-game="pokemon" data-title="Pokémon FireRed" aria-label="Pokémon FireRed" aria-pressed="false">
+      <img src="console-block-1-assets/pokemon.png" alt="Pokémon FireRed" draggable="false">
+    </button>
+    <button type="button" class="tile" data-game="mariokart" data-title="Mario Kart 8 Deluxe" aria-label="Mario Kart 8 Deluxe" aria-pressed="false">
+      <img src="console-block-1-assets/mariokart.png" alt="Mario Kart 8 Deluxe" draggable="false">
+    </button>
+  </div>
+  
+  <div class="caption" id="caption">
+    <h1>The Legend of Zelda</h1>
+    <h2>Link's Awakening</h2>
+    <span class="ready">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>
+      Prêt à jouer
+    </span>
+  </div>
+
+  <div class="reference" id="reference" hidden><img src="direction-b-console.png" alt="Image Console validée servant de référence"></div>
+</div></div>
+<div class="cycle"><button id="previous" type="button" aria-label="Vue précédente">←</button><span id="variant-label">Prototype HTML</span><button id="next" type="button" aria-label="Vue suivante">→</button></div>
+<p class="notes" id="state" role="status">Bloc Console · Simulation… aucune action réelle. États fictifs repris de la maquette.</p>
+<p class="notes">À juger : en-tête, carrousel et légende. Zone inférieure masquée (carte build, dock, footer). Illustrations provisoires extraites de la référence.</p>
+<form class="feedback" id="feedback">
+  <label for="verdict">Ton avis sur l'en-tête et le carrousel
+    <select id="verdict" name="verdict" required>
+      <option value="" disabled selected>Choisir…</option>
+      <option value="validate">Valider visuellement ce bloc</option>
+      <option value="revise">Demander des corrections</option>
+    </select>
+  </label>
+  <label for="note">Précisions
+    <textarea id="note" name="note" aria-label="Précisions pour l'en-tête et le carrousel" placeholder="En-tête, espacement carrousel, taille légende, bordures…"></textarea>
+  </label>
+  <div class="actions">
+    <button class="send" id="send" type="submit">Envoyer mon retour</button>
+    <button class="export" id="export" type="button">Exporter mon retour</button>
+  </div>
+</form>
+</main><script>
+const variants=['html','reference','overlay'],labels={html:'Prototype HTML',reference:'Référence validée',overlay:'Superposition à 50 %'};
+const $=id=>document.getElementById(id);let variant=new URL(location.href).searchParams.get('variant') || 'html';
+
+const games = {
+  stardew: {title: 'Stardew Valley', caption: 'Stardew Valley'},
+  zelda: {title: 'The Legend of Zelda\nLink\'s Awakening', caption: 'The Legend of Zelda<br>Link\'s Awakening'},
+  pokemon: {title: 'Pokémon FireRed', caption: 'Pokémon FireRed'},
+  mariokart: {title: 'Mario Kart 8 Deluxe', caption: 'Mario Kart 8 Deluxe'}
+};
+
+function fit(){$('canvas').style.transform=`scale(${Math.min(1,$('frame').clientWidth/1360)})`;}
+
+function setVariant(value){
+  variant=variants.includes(value)?value:'html';
+  $('reference').hidden=variant==='html';
+  $('reference').style.opacity=variant==='overlay'?'.5':'1';
+  document.querySelectorAll('[data-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===variant)));
+  $('variant-label').textContent=labels[variant];
+  $('state').textContent=`${labels[variant]} · Bloc Console · Simulation… aucune action réelle.`;
+  if(location.protocol.startsWith('http')){
+    const url=new URL(location.href);
+    url.searchParams.set('variant',variant);
+    history.replaceState(null,'',url);
+  }
+}
+
+function cycle(step){setVariant(variants[(variants.indexOf(variant)+step+variants.length)%variants.length]);}
+
+document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>setVariant(button.dataset.view));
+$('previous').onclick=()=>cycle(-1);
+$('next').onclick=()=>cycle(1);
+
+function selectGame(button){
+  const gameId = button.dataset.game;
+  const game = games[gameId];
+  
+  // Update selection
+  document.querySelectorAll('.tile').forEach(t=>t.classList.remove('selected'));
+  button.classList.add('selected');
+  document.querySelectorAll('.tile').forEach(t=>t.setAttribute('aria-pressed',String(t===button)));
+  
+  // Update caption
+  const caption = $('caption');
+  const lines = game.caption.split('<br>');
+  caption.innerHTML = lines.map((line, i) => `<h${i+1}>${line}</h${i+1}>`).join('') + '<span class="ready"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>Prêt à jouer</span>';
+  
+  caption.style.left=`${button.offsetLeft+button.offsetWidth/2-180}px`;
+  $('state').textContent=`Simulation : ${game.title} sélectionné. Aucune action réelle.`;
+}
+selectGame(document.querySelector('.tile.selected'));
+
+document.querySelectorAll('.tile').forEach(button=>{
+  button.onclick=()=>selectGame(button);
+});
+
+document.addEventListener('keydown',event=>{
+  if(event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.target.closest('input,textarea,select,[contenteditable=true]'))return;
+  if(event.key==='ArrowRight' || event.key==='ArrowLeft'){
+    event.preventDefault();
+    const tiles = document.querySelectorAll('.tile');
+    const current = document.querySelector('.tile.selected');
+    let index = Array.from(tiles).indexOf(current);
+    if(event.key==='ArrowRight') index = (index + 1) % tiles.length;
+    else index = (index - 1 + tiles.length) % tiles.length;
+    selectGame(tiles[index]);
+  }
+});
+
+function feedback(){return {block:'console-header-carousel',verdict:$('verdict').value,note:$('note').value.trim(),variant};
+}
+
+$('feedback').onsubmit=async event=>{
+  event.preventDefault();
+  const answer=feedback();
+  if(!answer.verdict)return;
+  const summary=answer.verdict==='validate'?'Bloc Console validé visuellement':'Bloc Console à reprendre';
+  if(typeof openchamber!=='undefined' && typeof openchamber.submit==='function'){
+    await openchamber.submit(answer,summary);
+    $('send').disabled=true;
+  }else $('state').textContent=summary+' · Test local uniquement, aucun fichier modifié.';
+};
+
+$('export').onclick=()=>{
+  const url=URL.createObjectURL(new Blob([JSON.stringify(feedback(),null,2)],{type:'application/json'})),
+  link=document.createElement('a');
+  link.href=url;
+  link.download='retour-prototype-console-bloc-1.json';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const saved=typeof openchamber!=='undefined'?openchamber.answer:null;
+if(saved?.block==='console-header-carousel'){
+  $('verdict').value=saved.verdict;
+  $('note').value=saved.note || '';
+  variant=saved.variant;
+  $('send').disabled=true;
+}
+
+new ResizeObserver(fit).observe($('frame'));
+fit();
+setVariant(variant);
+</script></body></html>

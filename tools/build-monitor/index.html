@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="fr" data-ambiance="cinema">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bibliothèque — NXNative</title>
+<style>
+:root{
+  color-scheme:dark;
+  font-family:"Avenir Next","Helvetica Neue",sans-serif;
+  font-size:16px;
+  /* Surfaces */
+  --bg:#101014;--nav:#09090c;--surface:#1b1b21;--raised:#26262e;--field:#202026;
+  --hover:#17171d;--active:#2e2e37;--shade:#0e0e13;--overlay:#0b0b10d9;
+  --dialog:#18181f;--backdrop:#030308bd;--cover-overlay:#15151cbb;--cover-scrim:linear-gradient(transparent,#0008);
+  --warning-wash:#f2cf9108;--success-wash:#9cdeb408;
+  --border-soft:#23232b;--border:#32323c;--glass:#ffffff14;--glass-strong:#ffffff26;
+  /* Texte */
+  --text:#f4f4f7;--text-soft:#d6d6e0;--muted:#a4a4b2;--faint:#8c8c9c;
+  /* Accent */
+  --accent:#c2ccff;--accent-strong:#dce0f2;--on-accent:#18181f;
+  /* Statuts */
+  --status-success:#9cdeb4;--status-warning:#f2cf91;--status-error:#f0aaa9;--status-info:var(--accent);
+  /* Échelle d’espacement */
+  --space-1:.25rem;--space-2:.5rem;--space-3:.75rem;--space-4:1rem;--space-5:1.25rem;--space-6:1.5rem;--space-7:2rem;--space-8:2.5rem;
+  /* Échelle de rayons */
+  --radius-sm:.375rem;--radius-md:.5rem;--radius-lg:.75rem;--radius-xl:1rem;--radius-full:999px;
+  /* Échelle de texte — le texte fonctionnel ne descend jamais sous 12px */
+  --text-xs:.75rem;--text-sm:.875rem;--text-md:.9375rem;--text-lg:1.0625rem;--text-xl:1.3125rem;--text-2xl:1.625rem;--text-hero:clamp(2rem,3.3vw,3.4rem);
+  /* Ombres */
+  --shadow-1:0 2px 8px #0003;--shadow-2:0 4px 25px #0006;--shadow-3:0 30px 100px #0009;
+  /* Mouvement */
+  --motion-fast:.15s;--motion-med:.25s;
+  /* Voile cinématographique de la bannière */
+  --scrim:linear-gradient(90deg,rgba(6,13,24,.96),rgba(6,13,24,.75) 33%,rgba(6,13,24,.03) 77%),linear-gradient(0deg,rgba(6,13,24,.6),transparent 65%);
+  --font-mono:ui-monospace,monospace;
+}
+*{box-sizing:border-box}body{margin:0;color:var(--text);font-size:var(--text-md)}button,input,select{font:inherit}button{cursor:pointer}button,input,select{color:inherit}button{border:0}button:disabled{cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}button:disabled{opacity:.55}[hidden]{display:none!important}svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}h1,h2,h3,p{margin:0}button{text-align:inherit}a{color:var(--accent)}
+.shell{display:grid;grid-template-columns:184px minmax(0,1fr);min-height:820px;background:var(--bg);border-radius:var(--radius-xl);overflow:clip}
+.sidebar{background:var(--nav);padding:var(--space-7) var(--space-3) var(--space-5);display:flex;flex-direction:column;gap:var(--space-7)}
+.brand{display:flex;align-items:center;gap:var(--space-2);padding:0 10px;font-weight:700;font-size:var(--text-lg);letter-spacing:-.04em}
+.brand-mark{width:31px;height:31px;background:var(--text);color:var(--nav);display:grid;place-items:center;border-radius:var(--radius-md);font-weight:800;font-size:var(--text-lg);letter-spacing:-.11em;padding-right:2px}
+.nav{display:grid;gap:5px}
+.nav button{background:none;display:flex;align-items:center;gap:var(--space-3);color:var(--muted);padding:13px 12px;border-radius:var(--radius-md);font-size:var(--text-sm);white-space:nowrap}
+.nav button:hover{background:var(--hover);color:var(--text)}
+.nav button[aria-pressed=true]{background:var(--active);color:var(--text)}
+.nav-count{margin-left:auto;font-size:var(--text-xs);color:var(--muted)}
+.nav-divider{height:1px;background:var(--border-soft);margin:var(--space-4) var(--space-3)}
+.sidebar-bottom{margin-top:auto;display:grid;gap:var(--space-4);padding:0 10px}
+.sidebar-bottom p{font-size:var(--text-xs);color:var(--muted);line-height:1.7}
+.local{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:var(--text-xs)}
+.local i{width:6px;height:6px;border-radius:var(--radius-full);background:var(--status-success)}
+.connection-lost .local i{background:var(--status-warning)}
+.main{min-width:0;padding:var(--space-7) clamp(var(--space-5),3vw,3rem) var(--space-5)}
+.topbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-5);margin-bottom:var(--space-6)}
+.topbar h1{font-size:var(--text-xl);letter-spacing:-.045em;font-weight:650}
+.topbar-tools{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;justify-content:flex-end}
+.topbar-tools .search{width:clamp(170px,18vw,240px)}
+.search{display:flex;align-items:center;gap:9px;max-width:240px;width:40%;background:var(--field);border-radius:var(--radius-md);padding:10px 13px;color:var(--muted)}
+.search svg{width:16px;height:16px}
+.search input{width:100%;min-width:0;border:0;outline:none;background:none;font-size:var(--text-sm)}
+.search input::placeholder{color:var(--muted)}
+.search:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.search input:focus-visible{outline:none}
+.hero{position:relative;isolation:isolate;min-height:340px;border-radius:var(--radius-md);overflow:hidden;background:var(--surface);display:flex;align-items:flex-end;padding:var(--space-6)}
+.hero-image{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:center 48%}
+.hero:after{content:"";position:absolute;inset:0;z-index:-1;background:var(--scrim)}
+.hero-copy{max-width:360px}
+.hero-tag{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:var(--text-xs);margin-bottom:var(--space-4)}
+.hero-tag svg{width:14px;height:14px}
+.hero h2{font-size:var(--text-hero);font-weight:700;letter-spacing:-.065em;line-height:1.08;margin-bottom:var(--space-3)}
+.hero p{max-width:260px;font-size:var(--text-sm);line-height:1.65;color:var(--text-soft)}
+.hero-actions{display:flex;flex-wrap:wrap;gap:var(--space-3);margin-top:var(--space-5)}
+.primary,.secondary{display:inline-flex;align-items:center;justify-content:center;gap:9px;border-radius:var(--radius-sm);padding:11px 16px;font-size:var(--text-sm);font-weight:600;min-height:40px}
+.primary{background:var(--text);color:var(--on-accent)}
+.primary:hover{background:var(--accent-strong)}
+.secondary{background:var(--glass);color:var(--text)}
+.secondary:hover{background:var(--glass-strong)}
+.primary svg,.secondary svg{width:16px;height:16px}
+.hero-status{position:absolute;right:20px;bottom:19px;background:var(--overlay);padding:7px 10px;border-radius:var(--radius-sm);backdrop-filter:blur(8px);font-size:var(--text-xs);color:var(--text-soft)}
+.hero-status:before{content:"";display:inline-block;width:5px;height:5px;border-radius:var(--radius-full);background:var(--status-success);margin-right:6px}
+.collection-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:var(--space-6) 0 var(--space-4)}
+.collection-heading h2{font-size:var(--text-lg);letter-spacing:-.025em;font-weight:600}
+.collection-heading span{font-size:var(--text-xs);color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-5) var(--space-4)}
+.game-card{background:transparent;padding:0;min-width:0;color:var(--text);border-radius:var(--radius-md)}
+.cover{position:relative;aspect-ratio:16/10;overflow:hidden;border-radius:var(--radius-md);background:var(--surface)}
+.cover img{width:100%;height:100%;object-fit:cover;display:block;transition:transform var(--motion-med) ease}
+.game-card:hover .cover img{transform:scale(1.035)}
+.game-card:hover h3{color:var(--accent)}
+.cover:after{content:"";position:absolute;inset:50% 0 0;background:var(--cover-scrim);pointer-events:none}
+.edition-pill{position:absolute;right:9px;top:9px;background:var(--overlay);color:var(--text);padding:5px 7px;border-radius:var(--radius-sm);font-size:var(--text-xs);backdrop-filter:blur(5px)}
+.cover-action{position:absolute;right:10px;bottom:10px;z-index:1;display:grid;place-items:center;width:27px;height:27px;border-radius:var(--radius-full);background:var(--cover-overlay);color:var(--text)}
+.cover-action svg{width:15px;height:15px}
+.card-meta{padding:11px 1px 0}
+.card-meta h3{font-size:var(--text-md);font-weight:600;letter-spacing:-.025em;line-height:1.35}
+.card-subtitle{color:var(--muted);font-size:var(--text-xs);margin-top:3px}
+.state{display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);color:var(--muted);line-height:1.5}
+.card-meta .state{margin-top:7px}
+.state:before{content:"";width:5px;height:5px;border-radius:var(--radius-full);background:currentColor;flex:none}
+.state[data-tone=success]{color:var(--status-success)}
+.state[data-tone=warning]{color:var(--status-warning)}
+.state[data-tone=error]{color:var(--status-error)}
+.state[data-tone=info]{color:var(--status-info)}
+.empty{padding:50px 10px;color:var(--muted);font-size:var(--text-md);line-height:1.8}
+.footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:var(--space-6);padding-top:var(--space-4);border-top:1px solid var(--border-soft);color:var(--faint);font-size:var(--text-xs);line-height:1.7}
+.connection-lost #connection{color:var(--status-warning)}
+.refresh{display:flex;align-items:center;gap:7px;background:none;padding:0;color:var(--muted);font-size:var(--text-xs)}
+.refresh svg{width:14px;height:14px}
+.refresh:hover{color:var(--text)}
+dialog{padding:0;border:1px solid var(--border);background:var(--dialog);color:var(--text);border-radius:var(--radius-xl);width:min(560px,calc(100% - 28px));max-height:90dvh;overflow:auto;box-shadow:var(--shadow-3)}
+dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(7px)}
+.detail-art{width:100%;aspect-ratio:16/7;object-fit:cover;display:block;background:var(--surface)}
+.close{position:absolute;right:12px;top:12px;width:33px;height:33px;background:var(--overlay);border-radius:var(--radius-full);display:grid;place-items:center;color:var(--text);z-index:2}
+.close svg{width:17px;height:17px}
+.detail-body{padding:var(--space-5) var(--space-6) var(--space-6)}
+.detail-body h2{font-size:var(--text-2xl);line-height:1.15;letter-spacing:-.05em;margin:12px 0 7px}
+.detail-subtitle{font-size:var(--text-sm);color:var(--muted)}
+.edition-field{display:flex;align-items:center;gap:12px;margin:var(--space-5) 0;font-size:var(--text-sm);color:var(--muted)}
+select{min-width:0;flex:1;background:var(--raised);border:1px solid var(--border);padding:9px 12px;border-radius:var(--radius-sm);font-size:var(--text-sm)}
+.inventory{display:flex;gap:8px;flex-wrap:wrap;margin:var(--space-5) 0 var(--space-4)}
+.inventory span{background:var(--raised);padding:7px 10px;border-radius:var(--radius-sm);color:var(--text-soft);font-size:var(--text-xs)}
+.next-step{padding:var(--space-4);border-left:2px solid var(--status-warning);background:var(--warning-wash);margin-bottom:var(--space-5)}
+.next-step[data-tone=success]{border-color:var(--status-success);background:var(--success-wash)}
+.next-step h3{font-size:var(--text-sm);margin-bottom:6px;font-weight:600}
+.next-step p{color:var(--text-soft);font-size:var(--text-sm);line-height:1.7}
+.command-row{display:flex;align-items:center;gap:10px;background:var(--shade);padding:12px 13px;border-radius:var(--radius-sm)}
+.command-row code{font-family:var(--font-mono);font-size:var(--text-xs);overflow-wrap:anywhere;flex:1}
+.copy{padding:6px;border-radius:var(--radius-sm);background:var(--glass);display:grid;place-items:center;color:var(--muted)}
+.copy:hover{color:var(--text)}
+.copy svg{width:17px;height:17px}
+.detail-notice{font-size:var(--text-xs);color:var(--faint);line-height:1.7;margin-top:13px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent-strong);color:var(--on-accent);border-radius:var(--radius-md);padding:11px 17px;font-size:var(--text-sm);box-shadow:var(--shadow-2);z-index:10;max-width:90%;text-align:center}
+.build-view h2{font-size:var(--text-xl);margin:8px 0 var(--space-5);letter-spacing:-.035em}
+.build-panel{background:var(--surface);padding:var(--space-5);border-radius:var(--radius-md)}
+.build-panel h3{font-size:var(--text-lg);margin-bottom:12px}
+.build-metrics{display:flex;flex-wrap:wrap;gap:var(--space-4);color:var(--muted);font-size:var(--text-sm);line-height:1.8}
+.build-note{color:var(--muted);font-size:var(--text-xs);line-height:1.8;margin-top:12px}
+.build-progress{width:100%;height:7px;display:block;appearance:none;border:0;border-radius:var(--radius-full);overflow:hidden;background:var(--raised);accent-color:var(--accent);margin:var(--space-4) 0 var(--space-2)}
+.build-progress::-webkit-progress-bar{background:var(--raised)}
+.build-progress::-webkit-progress-value{background:var(--accent)}
+.build-progress::-moz-progress-bar{background:var(--accent)}
+.build-fraction{font-size:var(--text-xs);color:var(--muted);margin-bottom:var(--space-4)}
+.build-details{margin-top:var(--space-4)}
+.stages{list-style:none;padding:0;margin:var(--space-5) 0}
+.stages li{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border-soft);font-size:var(--text-sm)}
+.stages time{margin-left:auto;color:var(--muted);font-size:var(--text-xs)}
+.stage-mark{color:var(--muted);width:20px;text-align:center}
+.stages .done .stage-mark{color:var(--status-success)}
+.stages .error .stage-mark{color:var(--status-error)}
+.pending{margin-top:var(--space-5);font-size:var(--text-sm);color:var(--muted)}
+.pending summary{cursor:pointer}
+.pending p{padding:12px 0;line-height:1.7;overflow-wrap:anywhere}
+.pending code{display:block;font-size:var(--text-xs);color:var(--text)}
+.catalog-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 var(--space-4)}
+.catalog-controls .search{width:100%;max-width:280px}
+.segmented{display:inline-flex;gap:2px;background:var(--field);border-radius:var(--radius-md);padding:3px}
+.segmented button{background:transparent;padding:7px 12px;border-radius:var(--radius-sm);font-size:var(--text-sm);color:var(--muted)}
+.segmented button:hover{color:var(--text)}
+.segmented button[aria-pressed=true]{background:var(--active);color:var(--text)}
+.catalog-list{border:1px solid var(--border-soft);border-radius:var(--radius-md);overflow:hidden}
+.catalog-row{display:grid;grid-template-columns:minmax(0,2.4fr) 88px minmax(0,2.2fr) 72px 64px;gap:12px;align-items:center;padding:9px 14px;font-size:var(--text-sm);color:var(--text-soft)}
+.catalog-row+.catalog-row{border-top:1px solid var(--border-soft)}
+.catalog-head{background:var(--hover);color:var(--muted);font-size:var(--text-xs);padding:8px 14px}
+.catalog-name span:first-child{font-weight:600;color:var(--text);letter-spacing:-.02em;line-height:1.35}
+.catalog-name .state{margin-top:3px}
+.catalog-note{font-size:var(--text-xs);color:var(--muted);line-height:1.6;margin-top:10px}
+/* Ambiance Console : une rangée de tuiles, sélection encadrée, dock rond en bas. */
+[data-ambiance="console"] .shell{display:flex;flex-direction:column;min-height:100dvh;border-radius:0}
+[data-ambiance="console"] .main{order:0;flex:1;min-width:0;display:flex;flex-direction:column}
+[data-ambiance="console"] #library-view{flex:1;display:flex;flex-direction:column;justify-content:center}
+[data-ambiance="console"] .hero{display:none}
+[data-ambiance="console"] .sidebar{order:1;align-self:center;flex-direction:row;align-items:center;gap:var(--space-4);padding:var(--space-3) var(--space-5);border:1px solid var(--border-soft);border-radius:var(--radius-full);max-width:calc(100% - 2rem);margin:var(--space-4) auto var(--space-6);box-shadow:var(--shadow-1)}
+[data-ambiance="console"] .brand,[data-ambiance="console"] .local{display:none}
+[data-ambiance="console"] .brand-name,[data-ambiance="console"] .nav-label,[data-ambiance="console"] .nav-count,[data-ambiance="console"] .refresh-label,[data-ambiance="console"] .local-label,[data-ambiance="console"] .sidebar-bottom p{display:none}
+[data-ambiance="console"] .nav{display:flex;flex-direction:row;gap:var(--space-3);margin:0 auto}
+[data-ambiance="console"] .nav button,[data-ambiance="console"] .refresh{width:46px;height:46px;justify-content:center;align-items:center;padding:0;border-radius:var(--radius-full);background:var(--surface);color:var(--muted)}
+[data-ambiance="console"] .nav button:hover,[data-ambiance="console"] .refresh:hover{background:var(--raised);color:var(--text)}
+[data-ambiance="console"] .nav button[aria-pressed=true]{background:var(--active);color:var(--text)}
+[data-ambiance="console"] .nav-divider{display:none}
+[data-ambiance="console"] .sidebar-bottom{margin:0;display:flex;align-items:center;gap:var(--space-3);padding:0}
+[data-ambiance="console"] .library-layout[data-build-visible="true"]{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:var(--space-6);align-items:center}
+[data-ambiance="console"] .grid{display:flex;align-items:center;gap:var(--space-5);min-width:0;overflow-x:auto;scroll-snap-type:x proximity;padding:var(--space-7) var(--space-5) var(--space-3)}
+[data-ambiance="console"] .game-card{flex:0 0 auto;width:clamp(10.5rem,18vw,15rem);scroll-snap-align:center}
+[data-ambiance="console"] .cover{aspect-ratio:1/1;border-radius:var(--radius-lg);transition:transform var(--motion-fast) ease}
+[data-ambiance="console"] .game-card:hover .cover img{transform:none}
+[data-ambiance="console"] .cover-action{display:none}
+[data-ambiance="console"] .game-card:focus-visible{outline:none}
+[data-ambiance="console"] .game-card.is-selected .cover{transform:scale(1.06);outline:3px solid var(--accent);outline-offset:3px}
+[data-ambiance="console"] .card-meta{visibility:hidden;min-height:3.4em}
+[data-ambiance="console"] .game-card.is-selected .card-meta{visibility:visible}
+[data-ambiance="console"] .card-meta{padding-top:var(--space-6)}
+[data-ambiance="console"] .build-preview{min-width:0}
+[data-ambiance="console"] .build-preview .build-panel{border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-1)}
+[data-ambiance="console"] .build-preview h3{font-size:var(--text-md);line-height:1.6}
+[data-ambiance="console"] .build-preview .build-metrics{display:grid;gap:var(--space-2)}
+[data-ambiance="console"] .build-panel{padding:var(--space-4)}
+[data-ambiance="console"] .build-metrics{gap:var(--space-4)}
+@media(min-width:1350px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.hero{min-height:375px}.main{max-width:1550px;width:100%;margin:0 auto}}
+@media(max-width:1000px){.shell{grid-template-columns:150px minmax(0,1fr)}.sidebar{padding:var(--space-6) var(--space-3) var(--space-5)}.nav button{padding:12px 9px;font-size:var(--text-xs);gap:8px}.brand{font-size:var(--text-md);gap:7px}.brand-mark{width:26px;height:26px;font-size:var(--text-md)}.main{padding:var(--space-6) var(--space-5) var(--space-5)}.hero{min-height:295px;padding:var(--space-6)}.hero h2{font-size:2.5rem}.grid{gap:var(--space-5) var(--space-3)}}
+@media(max-width:760px){.shell{grid-template-columns:64px minmax(0,1fr);min-height:720px}.sidebar{padding:var(--space-6) 9px;align-items:center;gap:var(--space-7)}.brand{padding:0}.brand-name,.nav-label,.nav-count,.sidebar-bottom{display:none}.nav button{justify-content:center;padding:13px}.nav svg{width:19px;height:19px}.nav-divider{margin:12px 0}.main{padding:var(--space-6) var(--space-5)}.hero{min-height:265px;padding:var(--space-5)}.hero h2{font-size:2.25rem}.hero p{font-size:var(--text-sm);max-width:220px}.hero-copy{max-width:245px}.hero-tag{margin-bottom:var(--space-3)}.hero-status{display:none}.hero-actions{margin-top:var(--space-4)}.topbar{margin-bottom:var(--space-5)}.topbar h1{font-size:var(--text-lg)}.topbar-tools{width:100%}.search{width:46%;padding:9px 10px}.collection-heading{margin-top:var(--space-6)}.cover{aspect-ratio:16/11}.footer{line-height:1.6}}
+@media(max-width:520px){.shell{display:block;min-height:0;border-radius:var(--radius-md)}.sidebar{flex-direction:row;gap:var(--space-3);padding:var(--space-3) var(--space-4)}.brand-name{display:block;font-size:var(--text-sm)}.brand-mark{width:24px;height:24px;font-size:var(--text-sm)}.nav{display:flex;margin-left:auto;gap:3px}.nav button{padding:8px}.nav-divider{display:none}.nav svg{width:17px;height:17px}.main{padding:6px var(--space-4) var(--space-5)}.topbar h1{font-size:var(--text-md)}.topbar{gap:12px;margin-bottom:var(--space-4)}.search{width:48%;max-width:none;padding:8px 9px}.hero{min-height:250px;padding:var(--space-5) var(--space-4)}.hero h2{font-size:2.2rem}.hero p{font-size:var(--text-sm);max-width:185px}.hero-copy{max-width:220px}.hero .secondary{display:none}.hero .primary{padding:10px 13px}.hero-image{object-position:58% center}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-5) var(--space-3)}.detail-body{padding:var(--space-5) var(--space-4)}.detail-body h2{font-size:1.45rem}.catalog-row{grid-template-columns:minmax(0,1fr) 64px;gap:8px;padding:10px 12px}.catalog-head,.col-tech{display:none}[data-ambiance="console"] .nav button,[data-ambiance="console"] .refresh{width:40px;height:40px}[data-ambiance="console"] .sidebar{gap:var(--space-2);padding:var(--space-2) var(--space-3)}[data-ambiance="console"] .nav{gap:var(--space-2)}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media(max-width:1100px){[data-ambiance="console"] .library-layout[data-build-visible="true"]{display:block}[data-ambiance="console"] .build-preview{max-width:440px;margin:var(--space-4) 0}}
+@media(max-width:760px){.topbar-tools .search{flex:1;width:auto;min-width:0}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></symbol>
+<symbol id="i-tool" viewBox="0 0 24 24"><path d="M14 6a5 5 0 0 0-6 6L3 17a2.8 2.8 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-3 3-4-4z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="i-mac" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+</defs></svg>
+<div class="shell">
+<aside class="sidebar" aria-label="Navigation principale">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">nx</span><span class="brand-name">nxnative</span></div>
+  <nav class="nav" aria-label="Bibliothèque">
+    <button type="button" data-filter="all" aria-pressed="true" aria-label="Tous les jeux"><svg aria-hidden="true"><use href="#i-grid"/></svg><span class="nav-label">Tous les jeux</span><span class="nav-count" id="count-all">—</span></button>
+    <button type="button" data-filter="available" aria-pressed="false" aria-label="Apps disponibles"><svg aria-hidden="true"><use href="#i-play"/></svg><span class="nav-label">Apps disponibles</span><span class="nav-count" id="count-available">—</span></button>
+    <button type="button" data-filter="prepare" aria-pressed="false" aria-label="À préparer"><svg aria-hidden="true"><use href="#i-tool"/></svg><span class="nav-label">À préparer</span><span class="nav-count" id="count-prepare">—</span></button>
+    <div class="nav-divider" aria-hidden="true"></div>
+    <button type="button" data-filter="builds" aria-pressed="false" aria-label="Suivi des builds"><svg aria-hidden="true"><use href="#i-clock"/></svg><span class="nav-label">Constructions</span></button>
+    <button type="button" data-filter="catalog" aria-pressed="false" aria-label="Catalogue des profils référencés"><svg aria-hidden="true"><use href="#i-book"/></svg><span class="nav-label">Catalogue</span></button>
+  </nav>
+  <div class="sidebar-bottom">
+    <button type="button" class="refresh" id="refresh" aria-label="Actualiser"><svg aria-hidden="true"><use href="#i-refresh"/></svg><span class="refresh-label">Actualiser</span></button>
+    <p id="storage">Stockage local</p>
+    <span class="local"><i></i><span class="local-label">Sur ton Mac</span></span>
+  </div>
+</aside>
+<main class="main">
+  <header class="topbar">
+    <h1 id="page-title">Bibliothèque</h1>
+    <div class="topbar-tools">
+      <div class="segmented" id="ambiance-toggle" role="group" aria-label="Ambiance d’affichage">
+        <button type="button" data-ambiance="cinema" aria-pressed="true">Cinéma</button>
+        <button type="button" data-ambiance="console" aria-pressed="false">Console</button>
+      </div>
+      <label class="search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Rechercher un jeu" aria-label="Rechercher un jeu" autocomplete="off"></label>
+    </div>
+  </header>
+  <div id="library-view">
+    <section class="hero" id="hero" aria-labelledby="hero-title" hidden>
+      <img class="hero-image" id="hero-image" src="/art/stardew.jpg" alt="" fetchpriority="high">
+      <div class="hero-copy"><div class="hero-tag"><svg aria-hidden="true"><use href="#i-mac"/></svg>Dans ta bibliothèque</div><h2 id="hero-title">Stardew Valley</h2><p id="hero-description"></p><div class="hero-actions"><button class="primary" id="hero-open" type="button">Voir le jeu<svg aria-hidden="true"><use href="#i-chevron"/></svg></button><button class="secondary" id="hero-copy" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg>Commande</button></div></div>
+      <span class="hero-status" id="hero-status"></span>
+    </section>
+    <div class="collection-heading"><h2 id="collection-title">Tes jeux</h2><span id="summary">Chargement…</span></div>
+    <div class="library-layout" id="library-layout"><div class="grid" id="games"></div><aside class="build-preview" id="console-build" aria-label="Construction en cours" hidden></aside></div><p class="empty" id="empty" hidden>Aucun jeu ne correspond. Essaie un autre nom ou une autre vue.</p>
+  </div>
+  <section class="build-view" id="build-view" hidden aria-labelledby="build-title">
+    <h2 id="build-title">Dernière construction</h2>
+    <div class="build-panel" id="build-panel"><h3 id="phase">Aucune construction suivie</h3><progress class="build-progress" id="build-progress" max="1" aria-label="Progression de l’étape courante" hidden></progress><p class="build-fraction" id="build-fraction" hidden></p><div class="build-metrics" id="build-metrics" hidden><span id="elapsed"></span><span id="eta"></span></div><p class="build-note" id="eta-note">Les constructions lancées depuis Make apparaîtront ici. Ce dashboard ne lance aucune commande.</p><button class="secondary build-details" id="build-details" type="button" hidden>Voir les étapes</button></div>
+    <ol class="stages" id="stages" aria-label="Étapes de construction"></ol>
+    <details class="pending" id="pending-box" hidden><summary id="pending-title">Imports en attente</summary><div id="pending"></div></details>
+  </section>
+  <section id="catalog-view" hidden aria-labelledby="catalog-title">
+    <div class="collection-heading"><h2 id="catalog-title">Jeux pris en charge</h2><span id="catalog-summary">Chargement…</span></div>
+    <div class="catalog-controls">
+      <label class="search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="catalog-search" type="search" placeholder="Nom, identifiant ou moteur" aria-label="Rechercher dans le catalogue" autocomplete="off"></label>
+      <div class="segmented" role="group" aria-label="Filtre du catalogue">
+        <button type="button" data-catalog-filter="all" aria-pressed="true">Tous</button>
+        <button type="button" data-catalog-filter="owned" aria-pressed="false">Dans ta bibliothèque</button>
+        <button type="button" data-catalog-filter="new" aria-pressed="false">À découvrir</button>
+      </div>
+    </div>
+    <div class="catalog-list" id="catalog-list"></div>
+    <p class="empty" id="catalog-empty" hidden>Aucun profil ne correspond à cette recherche.</p>
+    <p class="catalog-note">Une ligne par profil référencé (les variantes régionales comptent séparément). « Dans ta bibliothèque » : les fichiers de ce Title ID sont présents — l’app Mac n’est pas pour autant construite ou testée.</p>
+  </section>
+  <footer class="footer"><span id="connection" role="status">Connexion à la bibliothèque locale…</span><span>NXNative · Bibliothèque privée</span></footer>
+</main>
+</div>
+<dialog id="detail" aria-labelledby="detail-title"><button type="button" class="close" id="close-detail" aria-label="Fermer la fiche"><svg aria-hidden="true"><use href="#i-close"/></svg></button><img class="detail-art" id="detail-art" alt=""><div class="detail-body"><span class="state" id="detail-state"></span><h2 id="detail-title"></h2><p class="detail-subtitle" id="detail-subtitle"></p><label class="edition-field" id="edition-field" hidden>Édition<select id="edition" aria-label="Langue de Pokémon FireRed"></select></label><div class="inventory" id="inventory"></div><div class="next-step" id="next-step"><h3 id="next-title"></h3><p id="next-description"></p></div><div class="command-row" id="command-row"><code id="command"></code><button class="copy" id="copy-command" type="button" aria-label="Copier la commande"><svg aria-hidden="true"><use href="#i-copy"/></svg></button></div><p class="detail-notice" id="detail-notice"></p></div></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+const EDITIONS = {fr:'Français',en:'Anglais',de:'Allemand',es:'Espagnol',it:'Italien',ja:'Japonais'};
+const CATALOG = {
+  '0100E65002BB8000': {title:'Stardew Valley',art:'stardew',heroArt:'stardew-scene',subtitle:'Ferme & vie au village',order:0},
+  '01006BB00C6F0000': {title:'Zelda',art:'zelda',subtitle:'Link’s Awakening',order:1},
+  'Pokémon FireRed': {title:'Pokémon FireRed',art:'pokemon',subtitle:'Les six éditions réunies',order:2},
+  '0100152000022000': {title:'Mario Kart 8 Deluxe',art:'mario',subtitle:'Course & multijoueur',order:3},
+  '0100C9A00ECE6000': {title:'Nintendo 64',art:'n64',subtitle:'Nintendo Classics',order:4}
+};
+function groupGames(games) {
+  const families = new Map();
+  for (const game of games) {
+    const id = game.group || game.title_id;
+    if (!families.has(id)) families.set(id,{id,meta:CATALOG[id] || {title:game.name,subtitle:'Jeu local',order:99},editions:[]});
+    families.get(id).editions.push(game);
+  }
+  return [...families.values()].map(family => ({...family,game:family.editions.find(g=>g.edition==='fr' && g.app) || family.editions.find(g=>g.app) || family.editions.find(g=>g.edition==='fr') || family.editions[0]})).sort((a,b)=>a.meta.order-b.meta.order || a.meta.title.localeCompare(b.meta.title,'fr'));
+}
+function gameView(game) {
+  if (game.state === 'running') return {label:'Construction en cours',tone:'info',title:'Construction en cours',note:'Le suivi des constructions affiche l’étape en cours. Aucun temps total n’est inventé.'};
+  if (game.app) {
+    if (game.title_id === '0100E65002BB8000' && game.state === 'done') return {label:'Jouable · confirmé',tone:'success',title:'Rien ne manque pour jouer',note:'Tu as confirmé le fonctionnement de cette construction avec ta manette PowerA.'};
+    return {label:game.state==='experimental'?'À tester en jeu':'Application disponible',tone:'warning',title:'Il reste à tester en jeu',note:game.state==='experimental'?'L’application Mac est construite. Le profil reste expérimental : compilation réussie ne veut pas dire fonctionnement confirmé.':game.reason};
+  }
+  if (!game.files.base) return {label:'Base manquante',tone:'error',title:'Ajouter le jeu de base',note:'Le fichier de base est nécessaire avant de construire cette application.'};
+  if (game.title_id === '0100152000022000' && !game.files.updates) return {label:'Mise à jour requise',tone:'error',title:'Il manque la mise à jour 4.0.0 ou 4.0.1',note:'La base 1.0.0 est en ARM 32 bits et ne peut pas être exécutée par nxnative. Termine le téléchargement, puis importe ta mise à jour avant de relancer la construction.'};
+  if (game.title_id === '0100C9A00ECE6000' && game.state === 'unsupported') return {label:'Analyse nécessaire',tone:'error',title:'72 modules à retrouver',note:'Le dernier essai a trouvé 1 module sur 73 attendus. La base et la mise à jour sont présentes ; le format des ressources doit encore être analysé. Aucun contrôle d’intégrité n’a été ignoré.'};
+  return {label:game.state==='error'?'Construction en échec':'À compiler',tone:game.state==='error'?'error':'warning',title:game.state==='error'?'Vérifier la dernière tentative':'Construire puis tester cette édition',note:game.state==='unsupported'?'Le fichier du jeu est présent, mais aucun profil validé n’existe. Un essai expérimental est nécessaire ; sa réussite n’est pas garantie.':game.reason};
+}
+function gameCommand(game) {
+  const view = gameView(game);
+  if (game.state==='running' || (!game.app && (view.tone==='error'))) return null;
+  const target = game.group==='Pokémon FireRed' ? `GAME=pokemon EDITION=${game.edition}` : `GAME=${game.slug}`;
+  return `make ${game.app?'run':'build'} ${target}${!game.app && ['unsupported','untested'].includes(game.state)?' EXPERIMENTAL=1':''}`;
+}
+function visibleFamilies(families,filter,query) {
+  const term = query.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr');
+  return families.filter(family => {
+    const available = family.editions.some(g=>g.app);
+    const name = [family.meta.title,family.meta.subtitle,...family.editions.map(g=>g.name)].join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr');
+    return (filter==='all' || filter==='available' && available || filter==='prepare' && !available) && name.includes(term);
+  });
+}
+function duration(seconds) {
+  const s = Math.max(0,Math.floor(seconds));
+  return s>=3600 ? `${Math.floor(s/3600)} h ${Math.floor(s%3600/60)} min` : `${Math.floor(s/60)} min ${String(s%60).padStart(2,'0')} s`;
+}
+function resolveAmbiance(param,stored) {
+  if (param==='console' || param==='cinema') return param;
+  if (stored==='console' || stored==='cinema') return stored;
+  return 'cinema';
+}
+function initialAmbiance() {
+  let param=null, stored=null;
+  try {param=new URLSearchParams(location.search).get('ambiance');} catch {}
+  try {stored=localStorage.getItem('nxnative-ambiance');} catch {}
+  return resolveAmbiance(param,stored);
+}
+const $ = id => document.getElementById(id);
+const node = (tag,text,className) => {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
+const icon = name => {const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS(svg.namespaceURI,'use');svg.setAttribute('aria-hidden','true');use.setAttribute('href',`#i-${name}`);svg.append(use);return svg;};
+let data = null, families = [], filter = 'all', query = '', selected = null, selectedEdition = {}, busy = false, lastSignature = '', toastTimer, catalogGames = null, catalogFilter = 'all', catalogQuery = '', catalogLoading = false, ambiance = initialAmbiance(), selectedFamilyId = null;
+function savePreferences() {try {localStorage.setItem('nxnative-library',JSON.stringify({filter,query,selectedEdition}));} catch {}}
+function applyAmbiance(value,persist) {
+  ambiance = resolveAmbiance(value,ambiance);
+  document.documentElement.dataset.ambiance = ambiance;
+  document.querySelectorAll('#ambiance-toggle button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.ambiance===ambiance)));
+  if (persist) {
+    try {localStorage.setItem('nxnative-ambiance',ambiance);} catch {}
+    const url=new URL(location.href);url.searchParams.set('ambiance',ambiance);history.replaceState(null,'',url);
+  }
+  renderCards();
+  placeBuildPanel();
+}
+function selectTile(tile) {$('games').querySelectorAll('.is-selected').forEach(t=>t.classList.remove('is-selected'));tile.classList.add('is-selected');selectedFamilyId=tile.dataset.familyId;}
+function placeBuildPanel() {
+  const preview=ambiance==='console' && ['all','available','prepare'].includes(filter) && Boolean(data?.active);
+  $('console-build').hidden=!preview;$('library-layout').dataset.buildVisible=String(preview);$('build-details').hidden=!preview;
+  const panel=$('build-panel'),host=preview?$('console-build'):$('build-view');
+  if(panel.parentNode!==host){if(preview)host.append(panel);else host.insertBefore(panel,$('stages'));}
+}
+function stageFraction(active) {return active?.state==='running' && Number.isFinite(active.stage_frac) && active.stage_frac>=0 && active.stage_frac<=1?active.stage_frac:null;}
+function notify(message) {$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,2600);}
+async function copyCommand(command) {
+  if (!command) return;
+  try {await navigator.clipboard.writeText(`cd ~/Games/NXNative && ${command}`);notify('Commande copiée — à coller dans le Terminal.');}
+  catch {notify('Copie indisponible ici : sélectionne la commande dans la fiche.');}
+}
+function artSource(meta) {return meta.art ? `/art/${meta.art}.jpg` : '';}
+function renderCards() {
+  const visible = visibleFamilies(families,filter,query);
+  const focused=$('games').contains(document.activeElement)?document.activeElement.dataset.familyId:null;
+  $('games').replaceChildren(...visible.map(family=>{
+    const game=family.game, view=gameView(game), card=node('button',undefined,'game-card');
+    card.type='button';card.dataset.familyId=family.id;card.setAttribute('aria-label',`${family.meta.title} — ${view.label}`);
+    const cover=node('div',undefined,'cover');
+    if (family.meta.art) {const image=node('img');image.src=artSource(family.meta);image.alt='';image.loading='lazy';cover.append(image);}
+    if (family.editions.length>1) cover.append(node('span',`${family.editions.length} éditions`,'edition-pill'));
+    const arrow=node('span',undefined,'cover-action');arrow.append(icon('chevron'));cover.append(arrow);
+    const meta=node('div',undefined,'card-meta'), state=node('span',view.label,'state');state.dataset.tone=view.tone;
+    meta.append(node('h3',family.meta.title),node('p',family.meta.subtitle,'card-subtitle'),state);card.append(cover,meta);
+    card.addEventListener('click',()=>openDetail(family.id));card.addEventListener('focus',()=>selectTile(card));return card;
+  }));
+  const tiles=[...$('games').children];
+  if (ambiance==='console' && tiles.length) selectTile(tiles.find(tile=>tile.dataset.familyId===selectedFamilyId) || tiles[0]);
+  if(focused)tiles.find(tile=>tile.dataset.familyId===focused)?.focus({preventScroll:true});
+  $('empty').hidden=visible.length>0;
+  $('summary').textContent=`${visible.length} jeu${visible.length>1?'x':''}`;
+  $('collection-title').textContent=query?'Résultats':filter==='available'?'Applications disponibles':filter==='prepare'?'À préparer':'Tes jeux';
+  $('hero').hidden=filter!=='all' || Boolean(query) || !families.some(f=>f.meta.art);
+  const featured=families.find(f=>f.game.title_id==='0100E65002BB8000' && f.game.app) || families.find(f=>f.game.app && f.meta.art) || families.find(f=>f.meta.art);
+  if (featured) {
+    $('hero-image').src=artSource({...featured.meta,art:featured.meta.heroArt || featured.meta.art});$('hero-image').alt=featured.meta.title;$('hero-title').textContent=featured.meta.title;
+    $('hero-description').textContent=gameView(featured.game).tone==='success'?'Ta ferme, tes habitudes. Le jeu est prêt, ta PowerA aussi.':featured.meta.subtitle;
+    $('hero-status').textContent=gameView(featured.game).label;
+    $('hero-open').onclick=()=>openDetail(featured.id);
+    $('hero-copy').hidden=!gameCommand(featured.game);$('hero-copy').onclick=()=>copyCommand(gameCommand(featured.game));
+  }
+}
+function renderDetail() {
+  const family=families.find(f=>f.id===selected);
+  if (!family) {if($('detail').open)$('detail').close();return;}
+  const game=family.editions.find(g=>g.edition===selectedEdition[family.id]) || family.game;
+  const view=gameView(game), command=gameCommand(game);
+  $('detail-title').textContent=family.meta.title;$('detail-subtitle').textContent=family.meta.subtitle;
+  $('detail-art').hidden=!family.meta.art;if(family.meta.art){$('detail-art').src=artSource(family.meta);$('detail-art').alt=family.meta.title;}
+  $('detail-state').textContent=view.label;$('detail-state').dataset.tone=view.tone;
+  $('edition-field').hidden=family.editions.length<2;
+  $('edition').replaceChildren(...[...family.editions].sort((a,b)=>Object.keys(EDITIONS).indexOf(a.edition)-Object.keys(EDITIONS).indexOf(b.edition)).map(g=>{const option=node('option',`${EDITIONS[g.edition] || g.edition}${g.app?' — app construite':''}`);option.value=g.edition;return option;}));
+  $('edition').value=game.edition || '';
+  $('inventory').replaceChildren(...[game.files.base?'Base présente':'Base absente',`${game.files.updates} mise${game.files.updates>1?'s':''} à jour`,game.app?'Application Mac présente':'Pas d’application Mac'].map(text=>node('span',text)));
+  $('next-title').textContent=view.title;$('next-description').textContent=view.note;$('next-step').dataset.tone=view.tone;
+  $('command-row').hidden=!command;$('command').textContent=command || '';$('copy-command').onclick=()=>copyCommand(command);
+  $('detail-notice').textContent=command?'Depuis ~/Games/NXNative. Le bouton copie la commande ; il ne lance rien. Les sauvegardes et les clés ne sont pas modifiées.':'Les fichiers et les sauvegardes restent intacts. Les détails reflètent le dernier inventaire local, pas un test en jeu.';
+}
+function openDetail(id) {selected=id;renderDetail();if(!$('detail').open)$('detail').showModal();}
+function renderBuild() {
+  placeBuildPanel();
+  const active=data?.active || (data && !('games' in data)?data:null);
+  const fraction=stageFraction(active);
+  $('build-progress').hidden=$('build-fraction').hidden=fraction===null;
+  if(fraction!==null){$('build-progress').value=fraction;$('build-fraction').textContent=`Étape courante : ${Math.round(fraction*100)} %`;}
+  if (!active) {$('phase').textContent='Aucune construction suivie';$('build-metrics').hidden=true;$('stages').replaceChildren();$('eta-note').textContent='Les constructions lancées depuis Make apparaîtront ici. Ce dashboard ne lance aucune commande.';return;}
+  const current=(active.stages || []).find(s=>s.index===active.current);
+  const label=active.state==='done'?'Application construite':active.state==='error'?'Construction en échec':active.state==='stopped'?'Construction arrêtée':current?.name || 'Préparation';
+  $('phase').textContent=active.game?`${active.game} — ${label}`:label;
+  $('build-panel').setAttribute('aria-busy',String(active.state==='running'));
+  $('build-metrics').hidden=false;$('elapsed').textContent=`Écoulé : ${duration(active.elapsed)}`;
+  $('eta').textContent=active.state==='running'?(active.stage_eta!=null?`Étape : ≈ ${duration(active.stage_eta)} restantes`:'Durée restante non estimable'):'';
+  $('eta-note').textContent=active.state==='running'?'L’estimation concerne uniquement l’étape actuelle. Le dashboard ne peut pas arrêter ni relancer cette construction.':'Dernier résultat enregistré. Les applications déjà construites restent disponibles dans la bibliothèque.';
+  $('stages').replaceChildren(...(active.stages || []).map(stage=>{const li=node('li',undefined,stage.status);li.append(node('span',stage.status==='done'?'✓':stage.status==='error'?'!':'•','stage-mark'),node('span',stage.name),node('time',stage.duration!=null?duration(stage.duration):active.state==='running'?duration(active.checked_at-stage.started):'Interrompu'));return li;}));
+  const pending=data.pending || [];$('pending-box').hidden=!pending.length;$('pending-title').textContent=`${pending.length} import${pending.length>1?'s':''} en attente`;
+  $('pending').replaceChildren(...pending.map(item=>{const p=node('p',item.reason);p.prepend(node('code',item.name));return p;}));
+}
+function setFilter(value) {
+  filter=['all','available','prepare','builds','catalog'].includes(value)?value:'all';
+  document.querySelectorAll('[data-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.filter===filter)));
+  $('page-title').textContent=filter==='builds'?'Constructions':filter==='catalog'?'Catalogue':'Bibliothèque';$('build-view').hidden=filter!=='builds';$('library-view').hidden=filter==='builds'||filter==='catalog';$('catalog-view').hidden=filter!=='catalog';
+  $('search').disabled=filter==='builds'||filter==='catalog';if(filter==='catalog')loadCatalog();renderCards();placeBuildPanel();savePreferences();
+}
+function ownedTitleIds() {return Array.isArray(data?.games)?new Set(data.games.map(g=>(g.title_id || '').toLocaleLowerCase('fr'))):null;}
+function renderCatalog() {
+  if (!catalogGames) return;
+  const owned=ownedTitleIds(), ownedCount=owned?catalogGames.filter(g=>owned.has(g.title_id.toLocaleLowerCase('fr'))).length:null;
+  $('catalog-summary').textContent=`${catalogGames.length} profil${catalogGames.length>1?'s':''} référencés · ${ownedCount===null?'bibliothèque non chargée':`${ownedCount} dans ta bibliothèque`}`;
+  document.querySelectorAll('[data-catalog-filter]').forEach(button=>button.disabled=!owned&&button.dataset.catalogFilter!=='all');
+  const term=catalogQuery.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr');
+  const visible=catalogGames.filter(game=>{
+    const isOwned=owned?.has(game.title_id.toLocaleLowerCase('fr'));
+    const hay=`${game.name} ${game.title_id} ${game.engine}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('fr');
+    return (catalogFilter==='all' || owned&&(catalogFilter==='owned'&&isOwned || catalogFilter==='new'&&!isOwned)) && hay.includes(term);
+  });
+  const head=node('div',undefined,'catalog-row catalog-head');
+  head.append(node('span','Jeu'),node('span','Version testée'),node('span','Moteur','col-tech'),node('span','API graphique','col-tech'),node('span','SDK','col-tech'));
+  $('catalog-list').replaceChildren(head,...visible.map(game=>{
+    const row=node('div',undefined,'catalog-row'), name=node('div',undefined,'catalog-name');
+    name.append(node('span',game.name));
+    if (owned?.has(game.title_id.toLocaleLowerCase('fr'))) {const badge=node('span','Dans ta bibliothèque','state');badge.dataset.tone='success';name.append(badge);}
+    row.append(name,node('span',game.build),node('span',game.engine,'col-tech'),node('span',game.graphics,'col-tech'),node('span',game.sdk,'col-tech'));
+    return row;
+  }));
+  $('catalog-empty').hidden=visible.length>0;
+}
+async function loadCatalog() {
+  if (catalogGames || catalogLoading) return;  // fetched once per page view; failed requests remain retryable
+  catalogLoading=true;
+  $('catalog-summary').textContent='Lecture du catalogue…';
+  try {
+    const response=await fetch('/catalog',{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    if (!response.ok) throw new Error('Unavailable');
+    catalogGames=(await response.json()).games || [];
+  } catch {$('catalog-summary').textContent='Catalogue indisponible — reclique sur Catalogue pour réessayer.';}
+  finally {catalogLoading=false;}
+  renderCatalog();
+}
+async function update() {
+  if (busy) return;busy=true;
+  try {
+    const response=await fetch('/status',{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    if(!response.ok)throw new Error('Unavailable');data=await response.json();
+    const signature=JSON.stringify(data.games || []);
+    if(signature!==lastSignature || !families.length){families=groupGames(data.games || []);renderCards();if($('detail').open)renderDetail();lastSignature=signature;}
+    $('count-all').textContent=families.length;$('count-available').textContent=families.filter(f=>f.editions.some(g=>g.app)).length;$('count-prepare').textContent=families.filter(f=>!f.editions.some(g=>g.app)).length;
+    if(data.free_bytes!=null)$('storage').textContent=`${(data.free_bytes/2**30).toFixed(0)} Gio libres`;
+    if(!('games' in data) && filter!=='builds')setFilter('builds');
+    $('connection').textContent=`Synchronisé à ${new Date(data.checked_at*1000).toLocaleTimeString('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit'})}`;
+    document.body.classList.remove('connection-lost');renderBuild();if(filter==='catalog')renderCatalog();
+  } catch {
+    document.body.classList.add('connection-lost');$('connection').textContent=data?'Hors connexion — dernier état conservé':'Serveur arrêté — lance make monitor pour actualiser.';
+  } finally {busy=false;}
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  try {const saved=JSON.parse(localStorage.getItem('nxnative-library') || '{}');query=typeof saved.query==='string'?saved.query:'';selectedEdition=saved.selectedEdition && typeof saved.selectedEdition==='object'?saved.selectedEdition:{};filter=saved.filter || 'all';} catch {}
+  $('search').value=query;
+  document.querySelectorAll('[data-filter]').forEach(button=>{button.title=button.getAttribute('aria-label');button.addEventListener('click',()=>setFilter(button.dataset.filter));});
+  $('build-details').addEventListener('click',()=>setFilter('builds'));
+  document.querySelectorAll('#ambiance-toggle button').forEach(button=>button.addEventListener('click',()=>applyAmbiance(button.dataset.ambiance,true)));
+  $('search').addEventListener('input',()=>{query=$('search').value;renderCards();savePreferences();});
+  document.querySelectorAll('[data-catalog-filter]').forEach(button=>button.addEventListener('click',()=>{catalogFilter=button.dataset.catalogFilter;document.querySelectorAll('[data-catalog-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));renderCatalog();}));
+  $('catalog-search').addEventListener('input',()=>{catalogQuery=$('catalog-search').value;renderCatalog();});
+  $('edition').addEventListener('change',()=>{selectedEdition[selected]=$('edition').value;renderDetail();savePreferences();});
+  $('close-detail').addEventListener('click',()=>$('detail').close());
+  $('detail').addEventListener('click',event=>{if(event.target===$('detail')){const r=$('detail').getBoundingClientRect();if(event.clientX<r.left || event.clientX>r.right || event.clientY<r.top || event.clientY>r.bottom)$('detail').close();}});
+  $('refresh').addEventListener('click',()=>{update();if(filter==='catalog')loadCatalog();});
+  document.addEventListener('keydown',event=>{
+    if (ambiance!=='console' || filter==='builds' || filter==='catalog' || $('detail').open || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key!=='ArrowLeft' && event.key!=='ArrowRight' && event.key!=='ArrowUp' && event.key!=='ArrowDown') return;
+    if (!$('games').contains(document.activeElement)) return;
+    const tiles=[...$('games').querySelectorAll('.game-card')];
+    if (!tiles.length) return;
+    event.preventDefault();
+    const index=tiles.indexOf(document.activeElement);
+    const next=event.key==='ArrowLeft'?Math.max(0,index-1):event.key==='ArrowRight'?Math.min(tiles.length-1,index+1):0;
+    tiles[index<0?0:next].focus();
+  });
+  applyAmbiance(ambiance,false);setFilter(filter);update();setInterval(update,2000);
+});
+</script>
+</body>
+</html>

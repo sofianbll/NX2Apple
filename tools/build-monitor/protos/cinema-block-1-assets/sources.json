@@ -1,0 +1,9 @@
+{
+  "purpose": "Temporary assets for an isolated Cinema rail and hero prototype. Visually accepted by Sofian on 2026-11-04; not integrated and not production artwork.",
+  "review": {"block": "cinema-rail-hero", "verdict": "validate", "note": "", "variant": "html", "scope": "Visual approval only. No dashboard integration authorized by this form."},
+  "reference": "../direction-a-cinema.png",
+  "reference-hero.png": "Crop of the approved mockup at x=111, y=19, width=1232, height=394.",
+  "avatar.png": "Crop of the approved mockup at x=20, y=671, width=60, height=60.",
+  "hero-background.png": "Image-model edit of reference-hero.png removing its baked-in interface. Composition may differ: temporary art to be reviewed, not a pixel-identical copy.",
+  "stardew-logo.png": "https://www.stardewvalley.net/wp-content/uploads/2017/12/main_logo.png"
+}
