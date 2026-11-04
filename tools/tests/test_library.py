@@ -186,6 +186,22 @@ class LibraryTests(unittest.TestCase):
         self.assertNotIn(str(self.root), json.dumps(rows))
         self.assertNotIn('path', edition)
 
+    def test_snapshot_skips_corrupt_or_incomplete_json(self):
+        lib.write_json(self.root / 'games/Good/game.json', {'name': 'Good', 'slug': 'good', 'title_id': '0100000000010000'})
+        (self.root / 'games/Corrupt').mkdir(parents=True)
+        (self.root / 'games/Corrupt/game.json').write_text('{not json')
+        lib.write_json(self.root / 'games/Incomplete/game.json', {'name': 'Incomplete', 'slug': 'incomplete'})
+        for name in ('active.json', 'import-status.json', 'import-receipts.json', 'good/state.json'):
+            path = self.root / '.build' / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('{not json')
+        with patch.object(lib, 'source_stamp', return_value='source'), patch.object(lib, 'profiles', return_value={}):
+            data = lib.snapshot(self.root)
+            self.assertEqual([game['slug'] for game in data['games']], ['good'])
+            self.assertIsNone(data['active'])
+            (self.root / '.build/active.json').write_text('{"game": "partial"}')
+            self.assertIsNone(lib.snapshot(self.root)['active'])
+
     def test_corrupt_archive_never_moves_source(self):
         path = self.package('game.rar')
         with patch.object(lib, 'wait_reason', return_value=None), patch.object(lib, 'archive_members', return_value=[(BASE, BASE, 264)]), patch.object(lib.subprocess, 'run', side_effect=subprocess.CalledProcessError(2, '7zz')):
@@ -327,6 +343,15 @@ class LibraryTests(unittest.TestCase):
                 lib.dashboard_play(self.root, game['slug'])
             self.assertEqual(caught.exception.status, 409)
             launch.assert_not_called()
+
+    def test_non_lock_value_errors_keep_their_message(self):
+        game, _ = self.game_with_app()
+        with patch.object(lib, 'runtime_state', side_effect=ValueError('runtime detail')):
+            with self.assertRaisesRegex(ValueError, '^runtime detail$'):
+                lib.dashboard_play(self.root, game['slug'])
+        with patch.object(lib, 'settings_response', side_effect=ValueError('settings detail')):
+            with self.assertRaisesRegex(ValueError, '^settings detail$'):
+                lib.dashboard_save_settings(self.root, game['slug'], {})
 
     def test_dashboard_play_refuses_symlinked_or_escaping_app(self):
         game, app = self.game_with_app()

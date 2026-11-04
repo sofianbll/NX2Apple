@@ -34,9 +34,10 @@ MAX_ENV = 64 * 1024
 
 def read_json(path, default=None):
     try:
-        return json.loads(path.read_text())
-    except FileNotFoundError:
+        data = json.loads(path.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return default
+    return data if isinstance(data, dict) else default
 
 
 def write_json(path, data):
@@ -85,6 +86,8 @@ def games(root):
     result = []
     for path in (root / 'games').rglob('game.json'):
         game = read_json(path)
+        if not game or any(not isinstance(game.get(key), str) for key in ('name', 'slug', 'title_id')):
+            continue
         if not SLUG.fullmatch(game['slug']) or not re.fullmatch(r'[0-9A-F]{16}', game['title_id']):
             raise ValueError('Identifiant de jeu invalide dans game.json')
         game['path'] = path.parent
@@ -479,16 +482,26 @@ def snapshot(root):
         rows.append({'name': game['name'], 'slug': game['slug'], 'title_id': game['title_id'], 'group': game.get('group'), 'edition': game.get('edition'), 'state': state, 'reason': reason, 'runtime': runtime_for(root, game, processes), 'app': app_path(root, game).is_dir(), 'files': {kind: len(list((game['path'] / kind).glob('*'))) for kind in ('base', 'updates', 'dlc')}})
     pending = []
     receipts = read_json(root / '.build/import-receipts.json', {})
-    for item in read_json(root / '.build/import-status.json', {}).get('pending', []):
+    status = read_json(root / '.build/import-status.json', {})
+    items = status.get('pending', [])
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or any(not isinstance(item.get(key), str) for key in ('name', 'source', 'reason')):
+            continue
         path = Path(item['source'])
         if not path.exists() or (path.is_file() and receipts.get(str(path)) == list(signature(path))):
             continue
         pending.append({'name': item['name'], 'reason': item['reason'], 'bytes': path.stat().st_size if path.is_file() else None})
     active = read_json(root / '.build/active.json')
+    if active and (not {'game', 'slug', 'started', 'state', 'pid', 'log'} <= active.keys() or not isinstance(active['log'], str)):
+        active = None
     if active:
         path = root / active['log']
         active = dict(active, events=path.read_text(errors='replace')[-2*1024*1024:] if path.is_file() else '')
     return {'games': rows, 'pending': pending, 'active': active, 'free_bytes': shutil.disk_usage(root).free, 'checked_at': time.time()}
+
+
+class OperationBusy(ValueError):
+    pass
 
 
 @contextlib.contextmanager
@@ -498,7 +511,7 @@ def operation(root):
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise ValueError('Un import, nettoyage ou build est déjà en cours') from None
+            raise OperationBusy('Un import, nettoyage ou build est déjà en cours') from None
         yield
 
 
@@ -794,7 +807,7 @@ def dashboard_save_settings(root, name, values):
                     raise PlayError(502, message)
     except PlayError:
         raise
-    except ValueError:
+    except OperationBusy:
         raise PlayError(409, 'Un import, nettoyage ou build est déjà en cours') from None
 
 
@@ -817,7 +830,7 @@ def dashboard_play(root, name, show_launcher=True, timeout=10):
             open_existing(root, game, show_launcher=show_launcher, timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except PlayError:
         raise
-    except ValueError:
+    except OperationBusy:
         raise PlayError(409, 'Un import, nettoyage ou build est déjà en cours') from None
     except (OSError, subprocess.SubprocessError):
         # No automatic retry: a second open could start a second instance.
