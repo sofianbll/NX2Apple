@@ -6,8 +6,8 @@
 
 **Status:** resolved
 
-- [ ] Avec l'option, fermer le pipe stdin arrête le serveur en moins de 3 s et libère le port (test sur port 0).
-- [ ] Sans l'option, stdin n'est jamais lu ; `make monitor` et Ctrl+C se comportent comme avant.
-- [ ] La ligne `Build monitor: http://127.0.0.1:8767` reste imprimée seulement après un bind réussi ; un bind impossible sort avec un code non nul sans cette ligne.
-- [ ] Port, hôtes admis, contrôles Host/Origin, routes et en-têtes inchangés (tests existants verts).
-- [ ] `make test` vert.
+- [x] Avec l'option, fermer le pipe stdin arrête le serveur en moins de 3 s et libère le port (test sur port 0).
+- [x] Sans l'option, stdin n'est jamais lu ; `make monitor` et Ctrl+C se comportent comme avant.
+- [x] La ligne `Build monitor: http://127.0.0.1:8767` reste imprimée seulement après un bind réussi ; un bind impossible sort avec un code non nul sans cette ligne.
+- [x] Port, hôtes admis, contrôles Host/Origin, routes et en-têtes inchangés (tests existants verts).
+- [x] `make test` vert.

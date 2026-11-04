@@ -6,9 +6,9 @@
 
 **Status:** resolved
 
-- [ ] `swift test` couvre `ServerProcess` contre un faux serveur : disponibilité, échec avant disponibilité, délai 15 s, conflit détecté sans lancement, arrêt par EOF, repli SIGTERM puis SIGKILL au seul PID possédé, processus témoin non lié toujours vivant.
-- [ ] Port déjà pris : état conflit affiché, bouton « Ouvrir dans le navigateur », aucun processus tué ni adopté.
-- [ ] Workspace absent ou sans `.venv/bin/python` / `tools/library.py` : message clair, aucun lancement. Réglage `WorkspacePath`, défaut `~/Games/NXNative`.
-- [ ] Mort inattendue du serveur : fin du journal + bouton « Relancer le serveur ».
-- [ ] Journal dans `~/Library/Logs/NXNative Dashboard/server.log`.
-- [ ] `make app` produit l'app ad hoc signée (`codesign --verify --strict` OK) ; `dist/` et `.build` SwiftPM ignorés par Git.
+- [x] `swift test` couvre `ServerProcess` contre un faux serveur : disponibilité, échec avant disponibilité, délai 15 s, conflit détecté sans lancement, arrêt par EOF, repli SIGTERM puis SIGKILL au seul PID possédé, processus témoin non lié toujours vivant.
+- [x] Port déjà pris : état conflit affiché, bouton « Ouvrir dans le navigateur », aucun processus tué ni adopté.
+- [x] Workspace absent ou sans `.venv/bin/python` / `tools/library.py` : message clair, aucun lancement. Réglage `WorkspacePath`, défaut `~/Games/NXNative`.
+- [x] Mort inattendue du serveur : fin du journal + bouton « Relancer le serveur ».
+- [x] Journal dans `~/Library/Logs/NXNative Dashboard/server.log`.
+- [x] `make app` produit l'app ad hoc signée (`codesign --verify --strict` OK) ; `dist/` et `.build` SwiftPM ignorés par Git.
