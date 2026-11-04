@@ -29,6 +29,17 @@ Spec : `.scratch/macos-app/`. Fusionnée dans `main` le 2026-11-04 (`f592f23`).
 - [ ] Tag `v0.2.0` après le test de Sofian.
 - [ ] Installation par Sofian depuis le DMG (« Ouvrir quand même »).
 
+## v0.2.1 — Manette dans la vue Cinéma
+
+API Gamepad standard du navigateur (app Mac et navigateur), dans `nx-components.js` (événement `nx-pad`) et `index.html`.
+
+- [x] Croix et stick gauche : passer d'une pochette à l'autre (bibliothèque et catalogue), même sélection que le clavier.
+- [x] Bouton du bas (A en mapping standard) : clique le bouton **Jouer** lui-même ; rien ne se lance à la simple sélection.
+- [x] Bouton de droite (B standard) : ferme la fiche ouverte, sinon revient à la bibliothèque.
+- [x] Tests Node sans UI (mapping, appuis uniques, A passe par le bouton), `make test` vert, preuve headless.
+- [ ] Test de Sofian avec sa manette PowerA, dans l'app : mapping par position, sur une manette Nintendo le bouton du bas porte la lettre B. À inverser si Sofian préfère la convention Nintendo.
+- [ ] Tag `v0.2.1` après son retour.
+
 ## v0.3.0 — Vue Console
 
 Vue TV et manette, à partir des prototypes `tools/build-monitor/protos/`. Cadrage à faire avant tout code.

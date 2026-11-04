@@ -4,6 +4,7 @@ Versions selon `ROADMAP.md`. Dates en Europe/Paris.
 
 ## [Non publié]
 
+- Navigation à la manette dans la vue Cinéma (v0.2.1) : croix et stick gauche entre les pochettes, bouton du bas = le même bouton **Jouer** (jamais de lancement à la simple sélection), bouton de droite = fermer la fiche ou revenir. Mapping standard W3C, par position.
 - Icône de l'app Mac (manette lumineuse sur fond violet cosmique), `tools/desktop-app/AppIcon.icns`.
 - App Mac `NXNative Dashboard.app` fusionnée dans `main` (`make app`, `make dmg`, `make app-test`) : fenêtre WKWebView confinée à `127.0.0.1:8767`, serveur lancé par l'app et arrêté à Quitter ou en cas de crash (`--stop-on-stdin-eof`), DMG non notarisé (« Ouvrir quand même »). `swift test` ne peut plus bloquer (attentes bornées). Le tag `v0.2.0` sera posé après le test à la main de Sofian.
 
