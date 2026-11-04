@@ -471,10 +471,11 @@ def runtime_state(root, game):
 
 def snapshot(root):
     profile = profiles(root)
-    source = source_stamp(root)
+    installed = games(root)
+    source = source_stamp(root) if installed else None
     processes = process_table()
     rows = []
-    for game in games(root):
+    for game in installed:
         state, reason = state_for(root, game, profile.get(game['title_id']), source)
         rows.append({'name': game['name'], 'slug': game['slug'], 'title_id': game['title_id'], 'group': game.get('group'), 'edition': game.get('edition'), 'state': state, 'reason': reason, 'runtime': runtime_for(root, game, processes), 'app': app_path(root, game).is_dir(), 'files': {kind: len(list((game['path'] / kind).glob('*'))) for kind in ('base', 'updates', 'dlc')}})
     pending = []

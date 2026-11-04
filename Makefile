@@ -4,12 +4,13 @@ PYTHON := $(ROOT)/.venv/bin/python
 MANAGER := $(ROOT)/tools/library.py
 APP_PACKAGE := $(ROOT)/tools/desktop-app
 APP_BUNDLE := $(ROOT)/dist/NXNative Dashboard.app
+APP_DMG := $(ROOT)/dist/NXNative Dashboard.dmg
 .DEFAULT_GOAL := help
 export GAME FROM EXPERIMENTAL EDITION
 
-.PHONY: help import list build all run monitor clean test app
+.PHONY: help import list build all run monitor clean test app dmg app-test
 help:
-	@printf '%s\n' 'make import                 Importer les fichiers terminés, sans déplacer les originaux' 'make list                   Voir les jeux et leurs identifiants' 'make build GAME=stardew      Construire seulement si nécessaire' 'make all                    Construire les jeux pris en charge et prêts' 'make run GAME=stardew        Ouvrir l’app existante ; construire seulement si absente' 'make monitor                Tableau de bord : http://127.0.0.1:8767' 'make clean GAME=stardew      Effacer uniquement les caches de ce jeu' 'make test                   Vérifier les outils locaux' 'make app                    Construire et signer NXNative Dashboard.app'
+	@printf '%s\n' 'make import                 Importer les fichiers terminés, sans déplacer les originaux' 'make list                   Voir les jeux et leurs identifiants' 'make build GAME=stardew      Construire seulement si nécessaire' 'make all                    Construire les jeux pris en charge et prêts' 'make run GAME=stardew        Ouvrir l’app existante ; construire seulement si absente' 'make monitor                Tableau de bord : http://127.0.0.1:8767' 'make clean GAME=stardew      Effacer uniquement les caches de ce jeu' 'make test                   Vérifier les outils locaux' 'make app                    Construire et signer NXNative Dashboard.app' 'make dmg                    Construire et vérifier le DMG installable' 'make app-test               Tester le cycle de vie de l’app construite'
 import list build all run monitor clean:
 	@"$(PYTHON)" "$(MANAGER)" $@
 test:
@@ -31,3 +32,7 @@ app:
 	codesign --verify --strict "$$bundle"
 	@test "$$(plutil -extract NSAppTransportSecurity json -o - "$(APP_BUNDLE)/Contents/Info.plist")" = '{"NSAllowsLocalNetworking":true}'
 	@printf '%s\n' 'App construite : $(APP_BUNDLE)'
+dmg: app
+	@bash "$(APP_PACKAGE)/package_dmg.sh" "$(APP_BUNDLE)" "$(APP_DMG)"
+app-test: app
+	@"$(PYTHON)" "$(APP_PACKAGE)/app_test.py" "$(APP_BUNDLE)"

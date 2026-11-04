@@ -174,6 +174,11 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             lib.games(self.root)
 
+    def test_empty_snapshot_does_not_require_source_checkout(self):
+        with patch.object(lib, 'source_stamp', side_effect=AssertionError('source inutile')):
+            data = lib.snapshot(self.root)
+        self.assertEqual(data['games'], [])
+
     def test_snapshot_exposes_group_and_edition_without_manifest_private_fields(self):
         lib.write_json(self.root / 'games/FireRed/Français/game.json', {'name': 'Pokemon FireRed FR', 'slug': 'pokemon-fr', 'title_id': '0100000000010000', 'group': 'Pokémon FireRed', 'edition': 'fr', 'private': 'do-not-expose'})
         lib.write_json(self.root / 'games/Other/game.json', {'name': 'Other', 'slug': 'other', 'title_id': '0100000000020000'})
