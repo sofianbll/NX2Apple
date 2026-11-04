@@ -6,7 +6,9 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import time
+from threading import Thread
 from urllib.parse import parse_qsl, urlsplit
 
 
@@ -310,9 +312,14 @@ def handler(status, play=None, settings=None, save_settings=None):
     return Handler
 
 
-def serve(status, play=None, settings=None, save_settings=None):
-    server = ThreadingHTTPServer(('127.0.0.1', 8767), handler(status, play, settings, save_settings))
-    print('Build monitor: http://127.0.0.1:8767', flush=True)
+def serve(status, play=None, settings=None, save_settings=None, stop_on_stdin_eof=False, port=8767):
+    server = ThreadingHTTPServer(('127.0.0.1', port), handler(status, play, settings, save_settings))
+    print(f'Build monitor: http://127.0.0.1:{server.server_port}', flush=True)
+    if stop_on_stdin_eof:
+        def stop():
+            sys.stdin.read()
+            server.shutdown()
+        Thread(target=stop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
