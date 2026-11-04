@@ -186,6 +186,11 @@ game slug to open an app that is already built. It never builds, imports or
 cleans; a missing app returns an error. Other buttons copy commands. `make run`
 on the command line is unchanged. A built app is not labelled gameplay-verified
 unless that build has been confirmed.
+A gamepad (browser Gamepad API, also in the Mac app) moves between covers with the
+d-pad or left stick; the bottom face button presses that same **Jouer** button and
+the right face button closes an open sheet or returns to the library. Buttons
+follow the W3C standard mapping by position: on a Nintendo-layout pad such as the
+PowerA, the bottom button is printed B.
 
 Runtime is separate from build progress: the dashboard distinguishes a native
 settings menu (`nxnative`) from its game's engine (`dmhost`) by exact bundle

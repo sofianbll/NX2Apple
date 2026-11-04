@@ -337,7 +337,47 @@ class NxBuildCard extends NxElement {
   }
 }
 
+// W3C standard Gamepad mapping: 0 bottom face button, 1 right face button, 12-15 d-pad, axes 0/1 left stick.
+// Positional, not by label: on a Nintendo-layout pad (PowerA) the bottom button is printed B.
+const PAD_BUTTONS = { 0: 'confirm', 1: 'back', 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
+
+export function padState(pad, dead = 0.5) {
+  const held = new Set();
+  for (const [index, action] of Object.entries(PAD_BUTTONS)) if (pad?.buttons?.[index]?.pressed) held.add(action);
+  const [x = 0, y = 0] = pad?.axes || [];
+  if (x <= -dead) held.add('left');
+  if (x >= dead) held.add('right');
+  if (y <= -dead) held.add('up');
+  if (y >= dead) held.add('down');
+  return held;
+}
+
+// Only new presses count: holding a direction moves once, never a repeated launch.
+export function padPresses(before, after) { return [...after].filter(action => !before.has(action)); }
+
+// Polls while a pad is connected and reports each press as a bubbling 'nx-pad' event on document.
+// ponytail: no auto-repeat while held, add it when the catalogue grid is driven by pad.
+function watchGamepads() {
+  if (!globalThis.navigator?.getGamepads) return;
+  let held = new Map(), frame = 0;
+  const poll = () => {
+    const next = new Map();
+    for (const pad of navigator.getGamepads()) {
+      if (!pad?.connected) continue;
+      const state = padState(pad);
+      next.set(pad.index, state);
+      for (const action of padPresses(held.get(pad.index) || new Set(), state)) {
+        document.dispatchEvent(new CustomEvent('nx-pad', { detail: { action } }));
+      }
+    }
+    held = next;
+    frame = next.size ? requestAnimationFrame(poll) : 0;
+  };
+  addEventListener('gamepadconnected', () => { if (!frame) frame = requestAnimationFrame(poll); });
+}
+
 if (globalThis.customElements) {
+  watchGamepads();
   const elements = {
     'nx-pill': NxPill,
     'nx-tile': NxTile,

@@ -885,6 +885,20 @@ function gridTarget(event,container) {
   else return null;
   event.preventDefault();return tiles[next];
 }
+// Gamepad press ('nx-pad' from nx-components.js). Confirm clicks the Jouer button itself: its disabled state and
+// POST /play guards stay the only way to launch; moving the selection never plays.
+function onPad(action) {
+  const dialog=[...document.querySelectorAll('dialog')].find(d=>d.open);
+  if (dialog) {if(action==='back')dialog.close();return;}
+  if (action==='back') {if(filter==='builds'||filter==='catalog')setFilter('all');return;}
+  const grid=filter==='catalog'?$('catalog-games'):filter==='builds'?null:$('games');
+  const focused=grid?.contains(document.activeElement)?document.activeElement.closest('nx-tile'):null;
+  const tile=focused || grid?.querySelector('nx-tile[selected]') || grid?.querySelector('nx-tile');
+  if (!tile) return;
+  if (action==='confirm') {if(grid===$('games'))$('play').click();else if(focused)tile.button.click();return;}
+  const target=focused?gridTarget({target:tile,key:{left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown'}[action],preventDefault(){}},grid):tile;
+  if (grid===$('games')) selectFamily(target.dataset.familyId,true); else target.focus();
+}
 async function loadCatalog() {
   if (catalogGames || catalogLoading) return;  // fetched once per page view; failed requests remain retryable
   catalogLoading=true;
@@ -937,6 +951,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('close-profile').addEventListener('click',()=>$('profile').close());
   $('profile').addEventListener('click',event=>closeOnBackdrop(event,$('profile')));
   document.addEventListener('nx-details',()=>setFilter('builds'));
+  document.addEventListener('nx-pad',event=>onPad(event.detail.action));
   $('play').addEventListener('click',()=>playGame(selectedGame()));
   $('hero-open').addEventListener('click',()=>openDetail(selectedFamilyId));
   $('hero-logo').addEventListener('error',()=>$('hero').classList.remove('has-logo'));

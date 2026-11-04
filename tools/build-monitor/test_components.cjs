@@ -32,3 +32,20 @@ test('stage progress is null when unknown or invalid', async () => {
     assert.equal(formatStageProgress(value), null, String(value));
   }
 });
+
+test('standard pad mapping: d-pad, left stick past the dead zone, bottom/right face buttons', async () => {
+  const {padState} = await load();
+  const pad = (pressed = [], axes = [0, 0]) => ({buttons: Array.from({length: 17}, (_, i) => ({pressed: pressed.includes(i)})), axes});
+  assert.deepEqual([...padState(pad([0, 1, 12, 13, 14, 15]))].sort(), ['back', 'confirm', 'down', 'left', 'right', 'up']);
+  assert.deepEqual([...padState(pad([], [0.8, -0.9]))].sort(), ['right', 'up']);
+  assert.deepEqual([...padState(pad([], [0.3, 0.4]))], []);
+  assert.deepEqual([...padState(pad([2, 3, 7]))], [], 'X, Y and ZR do nothing');
+  assert.deepEqual([...padState(null)], []);
+});
+
+test('only new presses count, so a held button never repeats', async () => {
+  const {padPresses} = await load();
+  assert.deepEqual(padPresses(new Set(), new Set(['confirm'])), ['confirm']);
+  assert.deepEqual(padPresses(new Set(['confirm']), new Set(['confirm'])), []);
+  assert.deepEqual(padPresses(new Set(['right']), new Set(['right', 'back'])), ['back']);
+});

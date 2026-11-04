@@ -572,3 +572,29 @@ test('new Pokémon use their own square covers and no invented wide artwork', ()
   assert.equal(call('detailArt',za).kind,'square');assert.equal(call('detailArt',pearl).kind,'square');
   assert.notEqual(za.coverSrc,pearl.coverSrc);assert.equal(za.art,undefined);assert.equal(pearl.art,undefined);
 });
+
+test('gamepad: A clicks the Jouer button itself, moves change the selection only, B closes an open sheet', () => {
+  const clicks = [], focused = [], closed = [];
+  const tile = id => ({dataset: {familyId: id}, closest() { return this; }, focus() { focused.push(id); }});
+  const tiles = [tile('a'), tile('b')];
+  const games = {contains: el => tiles.includes(el), querySelector: s => s === 'nx-tile[selected]' ? tiles[0] : tiles[0], querySelectorAll: () => tiles};
+  const dialog = {open: false, close() { closed.push('detail'); this.open = false; }};
+  const elements = {games, play: {click() { clicks.push('play'); }}, 'catalog-games': {}};
+  const document = {activeElement: null, addEventListener() {}, getElementById: id => elements[id], querySelectorAll: s => s === 'dialog' ? [dialog] : []};
+  const context = vm.createContext({document, getComputedStyle: () => ({gridTemplateColumns: '1fr 1fr 1fr 1fr'})});
+  vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
+  vm.runInContext('playGame = () => { throw new Error("A must go through the button") }; selectFamily = (id, focus) => { selectedFamilyId = id; if (focus) document.lastFocus = id; }; filter = "all"', context);
+  context.onPad('right');                       // nothing focused yet: focuses the selected tile, no move
+  assert.equal(document.lastFocus, 'a');
+  document.activeElement = tiles[0];
+  context.onPad('right');
+  assert.equal(document.lastFocus, 'b');
+  assert.deepEqual(clicks, [], 'moving never plays');
+  context.onPad('confirm');
+  assert.deepEqual(clicks, ['play']);
+  dialog.open = true;
+  context.onPad('confirm');
+  assert.deepEqual(clicks, ['play'], 'A does nothing behind an open sheet');
+  context.onPad('back');
+  assert.deepEqual(closed, ['detail']);
+});
