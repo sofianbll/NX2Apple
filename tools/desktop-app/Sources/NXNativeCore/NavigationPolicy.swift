@@ -7,6 +7,13 @@ public enum NavigationDecision: Equatable {
 }
 
 public enum NavigationPolicy {
+    public static func newWindowIsUserInitiated(
+        linkActivated: Bool,
+        allowsAutomaticJavaScriptWindows: Bool
+    ) -> Bool {
+        linkActivated || !allowsAutomaticJavaScriptWindows
+    }
+
     public static func decision(
         for url: URL,
         isUserInitiated: Bool,

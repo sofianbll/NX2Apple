@@ -2,6 +2,21 @@ import XCTest
 import NXNativeCore
 
 final class NavigationPolicyTests: XCTestCase {
+    func testNewWindowUserGesture() {
+        XCTAssertTrue(NavigationPolicy.newWindowIsUserInitiated(
+            linkActivated: true,
+            allowsAutomaticJavaScriptWindows: true
+        ))
+        XCTAssertTrue(NavigationPolicy.newWindowIsUserInitiated(
+            linkActivated: false,
+            allowsAutomaticJavaScriptWindows: false
+        ))
+        XCTAssertFalse(NavigationPolicy.newWindowIsUserInitiated(
+            linkActivated: false,
+            allowsAutomaticJavaScriptWindows: true
+        ))
+    }
+
     func testNavigationDecisions() throws {
         let cases: [(url: String, userInitiated: Bool, newWindow: Bool, expected: NavigationDecision)] = [
             ("http://127.0.0.1:8767/", false, false, .allow),

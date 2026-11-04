@@ -3,6 +3,12 @@ import NXNativeCore
 import WebKit
 
 final class DashboardNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
+    private let openExternal: (URL) -> Void
+
+    init(openExternal: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
+        self.openExternal = openExternal
+    }
+
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -23,7 +29,7 @@ final class DashboardNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDel
             decisionHandler(.allow)
         case .openExternally:
             decisionHandler(.cancel)
-            NSWorkspace.shared.open(url)
+            openExternal(url)
         case .deny:
             decisionHandler(.cancel)
         }
@@ -35,13 +41,19 @@ final class DashboardNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDel
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
+        // Sans popup automatique, WebKit ne délègue window.open que si un geste l'autorise.
+        let isUserInitiated = NavigationPolicy.newWindowIsUserInitiated(
+            linkActivated: navigationAction.navigationType == .linkActivated,
+            allowsAutomaticJavaScriptWindows: webView.configuration.preferences
+                .javaScriptCanOpenWindowsAutomatically
+        )
         if let url = navigationAction.request.url,
            NavigationPolicy.decision(
                for: url,
-               isUserInitiated: navigationAction.navigationType == .linkActivated,
+               isUserInitiated: isUserInitiated,
                isNewWindow: true
            ) == .openExternally {
-            NSWorkspace.shared.open(url)
+            openExternal(url)
         }
         return nil
     }

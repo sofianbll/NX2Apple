@@ -137,6 +137,7 @@ make test                  # Synthetic importer, incrementality and progress che
 make app                    # Construire et signer NXNative Dashboard.app
 make dmg                    # Produire et vérifier le DMG dans dist/
 make app-test               # Recette du cycle de vie, port 8767 libre requis
+swift test --package-path tools/desktop-app  # Tests Swift du cycle de vie
 defaults write local.nxnative.dashboard WorkspacePath /chemin/NXNative
 ```
 
