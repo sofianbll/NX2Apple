@@ -581,13 +581,13 @@ test('new Pokémon use their own square covers and no invented wide artwork', ()
   assert.notEqual(za.coverSrc,pearl.coverSrc);assert.equal(za.art,undefined);assert.equal(pearl.art,undefined);
 });
 
-test('gamepad: A clicks the Jouer button itself, moves change the selection only, B closes an open sheet', () => {
+test('gamepad: A opens the sheet, A in the sheet clicks the Jouer button itself, moves only select, B closes', () => {
   const clicks = [], focused = [], closed = [];
   const tile = id => ({dataset: {familyId: id}, closest() { return this; }, focus() { focused.push(id); }});
   const tiles = [tile('a'), tile('b')];
   const games = {contains: el => tiles.includes(el), querySelector: s => s === 'nx-tile[selected]' ? tiles[0] : tiles[0], querySelectorAll: () => tiles};
-  const dialog = {open: false, close() { closed.push('detail'); this.open = false; }};
-  const elements = {games, play: {click() { clicks.push('play'); }}, 'catalog-games': {}};
+  const dialog = {id: 'detail', open: false, close() { closed.push('detail'); this.open = false; }};
+  const elements = {games, play: {click() { clicks.push('play'); }}, 'hero-open': {click() { clicks.push('sheet'); dialog.open = true; }}, 'catalog-games': {}};
   const document = {activeElement: null, addEventListener() {}, getElementById: id => elements[id], querySelectorAll: s => s === 'dialog' ? [dialog] : []};
   const context = vm.createContext({document, getComputedStyle: () => ({gridTemplateColumns: '1fr 1fr 1fr 1fr'})});
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
@@ -599,10 +599,11 @@ test('gamepad: A clicks the Jouer button itself, moves change the selection only
   assert.equal(document.lastFocus, 'b');
   assert.deepEqual(clicks, [], 'moving never plays');
   context.onPad('confirm');
-  assert.deepEqual(clicks, ['play']);
-  dialog.open = true;
-  context.onPad('confirm');
-  assert.deepEqual(clicks, ['play'], 'A does nothing behind an open sheet');
+  assert.deepEqual(clicks, ['sheet'], 'A on a cover opens its sheet, never plays');
   context.onPad('back');
   assert.deepEqual(closed, ['detail']);
+  context.onPad('confirm');
+  context.onPad('confirm');
+  assert.deepEqual(clicks, ['sheet', 'sheet', 'play']);
+  assert.deepEqual(closed, ['detail', 'detail']);
 });

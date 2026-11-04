@@ -887,17 +887,17 @@ function gridTarget(event,container) {
   else return null;
   event.preventDefault();return tiles[next];
 }
-// Gamepad press ('nx-pad' from nx-components.js). Confirm clicks the Jouer button itself: its disabled state and
-// POST /play guards stay the only way to launch; moving the selection never plays.
+// Gamepad press ('nx-pad' from nx-components.js). Confirm on a cover opens its sheet; confirm in the sheet clicks the
+// Jouer button itself: its disabled state and POST /play guards stay the only way to launch; moving never plays.
 function onPad(action) {
   const dialog=[...document.querySelectorAll('dialog')].find(d=>d.open);
-  if (dialog) {if(action==='back')dialog.close();return;}
+  if (dialog) {if(action==='back')dialog.close();else if(action==='confirm'&&dialog.id==='detail'){dialog.close();$('play').click();}return;}
   if (action==='back') {if(filter==='builds'||filter==='catalog')setFilter('all');return;}
   const grid=filter==='catalog'?$('catalog-games'):filter==='builds'?null:$('games');
   const focused=grid?.contains(document.activeElement)?document.activeElement.closest('nx-tile'):null;
   const tile=focused || grid?.querySelector('nx-tile[selected]') || grid?.querySelector('nx-tile');
   if (!tile) return;
-  if (action==='confirm') {if(grid===$('games'))$('play').click();else if(focused)tile.button.click();return;}
+  if (action==='confirm') {if(grid===$('games'))$('hero-open').click();else if(focused)tile.button.click();return;}
   const target=focused?gridTarget({target:tile,key:{left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown'}[action],preventDefault(){}},grid):tile;
   if (grid===$('games')) selectFamily(target.dataset.familyId,true); else target.focus();
 }
