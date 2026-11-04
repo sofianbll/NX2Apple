@@ -317,7 +317,7 @@ def serve(status, play=None, settings=None, save_settings=None, stop_on_stdin_eo
     print(f'Build monitor: http://127.0.0.1:{server.server_port}', flush=True)
     if stop_on_stdin_eof:
         def stop():
-            sys.stdin.read()
+            sys.stdin.buffer.read()
             server.shutdown()
         Thread(target=stop, daemon=True).start()
     try:

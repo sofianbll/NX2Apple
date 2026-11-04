@@ -199,6 +199,13 @@ public final class ServerProcess: @unchecked Sendable {
         process = nil
         child.terminationHandler = nil
         closeInput()
+        let output = outputPipe?.fileHandleForReading
+        output?.readabilityHandler = nil
+        if let remaining = try? output?.readToEnd(), !remaining.isEmpty {
+            logData.append(remaining)
+            try? logHandle?.write(contentsOf: remaining)
+        }
+        receiveOutput(Data())
 
         switch previousState {
         case .starting:

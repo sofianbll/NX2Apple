@@ -111,6 +111,21 @@ class ServeTests(unittest.TestCase):
         reopened = ThreadingHTTPServer(('127.0.0.1', server.server_port), handler(lambda: {}))
         reopened.server_close()
 
+    def test_invalid_stdin_byte_still_stops_server(self):
+        read, write = os.pipe()
+        stdin = os.fdopen(read, 'r')
+        control = os.fdopen(write, 'wb')
+        self.addCleanup(stdin.close)
+        self.addCleanup(control.close)
+        server, thread, _, errors = self.start(True, stdin)
+        control.write(b'\xff')
+        control.close()
+        thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        reopened = ThreadingHTTPServer(('127.0.0.1', server.server_port), handler(lambda: {}))
+        reopened.server_close()
+
     def test_stdin_is_not_read_without_opt_in(self):
         class UnusedInput:
             used = False
