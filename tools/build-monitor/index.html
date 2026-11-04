@@ -899,6 +899,17 @@ function onPad(action) {
   const target=focused?gridTarget({target:tile,key:{left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown'}[action],preventDefault(){}},grid):tile;
   if (grid===$('games')) selectFamily(target.dataset.familyId,true); else target.focus();
 }
+// http://127.0.0.1:8767/#manette : raw pad state, to map a pad the browser does not know (read-only, launches nothing).
+function padDiagnostic() {
+  const box=node('pre');box.style.cssText='position:fixed;inset:auto 12px 12px auto;z-index:9;max-width:min(560px,90vw);margin:0;padding:12px;border-radius:12px;background:#000d;color:#fff;font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap';
+  document.body.append(box);
+  const frame=()=>{
+    const pads=[...navigator.getGamepads?.() || []].filter(Boolean);
+    box.textContent=pads.length?pads.map(p=>`${p.id}\nmapping: "${p.mapping}"\nboutons appuyés: ${p.buttons.map((b,i)=>b.pressed?i:null).filter(i=>i!==null).join(' ') || '—'}\naxes: ${p.axes.map((a,i)=>`${i}:${a.toFixed(2)}`).join('  ')}`).join('\n\n'):'Aucune manette vue : appuie sur un bouton.';
+    requestAnimationFrame(frame);
+  };
+  frame();
+}
 async function loadCatalog() {
   if (catalogGames || catalogLoading) return;  // fetched once per page view; failed requests remain retryable
   catalogLoading=true;
@@ -968,6 +979,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('close-detail').addEventListener('click',()=>$('detail').close());
   $('detail').addEventListener('click',event=>closeOnBackdrop(event,$('detail')));
   $('refresh').addEventListener('click',()=>{update();if(filter==='catalog')loadCatalog();});
+  if (location.hash==='#manette') padDiagnostic();
   setFilter(filter);update();setInterval(update,2000);
 });
 </script>

@@ -341,8 +341,10 @@ class NxBuildCard extends NxElement {
 // Positional, not by label: on a Nintendo-layout pad (PowerA) the bottom button is printed B.
 const PAD_BUTTONS = { 0: 'confirm', 1: 'back', 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
 
+// Non-standard pads are ignored: their raw button order and extra axes (motion sensors) would trigger random actions.
 export function padState(pad, dead = 0.5) {
   const held = new Set();
+  if (pad?.mapping !== 'standard') return held;
   for (const [index, action] of Object.entries(PAD_BUTTONS)) if (pad?.buttons?.[index]?.pressed) held.add(action);
   const [x = 0, y = 0] = pad?.axes || [];
   if (x <= -dead) held.add('left');

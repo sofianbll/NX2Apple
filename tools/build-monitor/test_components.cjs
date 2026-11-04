@@ -35,12 +35,13 @@ test('stage progress is null when unknown or invalid', async () => {
 
 test('standard pad mapping: d-pad, left stick past the dead zone, bottom/right face buttons', async () => {
   const {padState} = await load();
-  const pad = (pressed = [], axes = [0, 0]) => ({buttons: Array.from({length: 17}, (_, i) => ({pressed: pressed.includes(i)})), axes});
+  const pad = (pressed = [], axes = [0, 0]) => ({mapping: 'standard', buttons: Array.from({length: 17}, (_, i) => ({pressed: pressed.includes(i)})), axes});
   assert.deepEqual([...padState(pad([0, 1, 12, 13, 14, 15]))].sort(), ['back', 'confirm', 'down', 'left', 'right', 'up']);
   assert.deepEqual([...padState(pad([], [0.8, -0.9]))].sort(), ['right', 'up']);
   assert.deepEqual([...padState(pad([], [0.3, 0.4]))], []);
   assert.deepEqual([...padState(pad([2, 3, 7]))], [], 'X, Y and ZR do nothing');
   assert.deepEqual([...padState(null)], []);
+  assert.deepEqual([...padState({...pad([0, 15], [0.9, 0.9]), mapping: ''})], [], 'unknown pad: raw buttons and motion axes ignored');
 });
 
 test('only new presses count, so a held button never repeats', async () => {

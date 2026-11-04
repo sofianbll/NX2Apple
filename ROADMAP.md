@@ -37,6 +37,8 @@ API Gamepad standard du navigateur (app Mac et navigateur), dans `nx-components.
 - [x] Bouton du bas (A en mapping standard) : clique le bouton **Jouer** lui-même ; rien ne se lance à la simple sélection.
 - [x] Bouton de droite (B standard) : ferme la fiche ouverte, sinon revient à la bibliothèque.
 - [x] Tests Node sans UI (mapping, appuis uniques, A passe par le bouton), `make test` vert, preuve headless.
+- [x] Manette non standard ignorée (1er test de Sofian : boutons muets, sélection qui bouge en secouant). La PowerA (0000:0000) n'est sans doute pas reconnue par WebKit.
+- [ ] Relevé des boutons de la PowerA via `http://127.0.0.1:8767/#manette`, puis mapping dédié.
 - [ ] Test de Sofian avec sa manette PowerA, dans l'app : mapping par position, sur une manette Nintendo le bouton du bas porte la lettre B. À inverser si Sofian préfère la convention Nintendo.
 - [ ] Tag `v0.2.1` après son retour.
 
