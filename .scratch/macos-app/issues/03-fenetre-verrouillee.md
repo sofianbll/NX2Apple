@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] `NavigationPolicy` testée par table (XCTest) : `allow` pour l'origine exacte ; `openExternally` pour `https` externe sur action utilisateur et pour `target=_blank`/`window.open` ; `deny` pour `localhost:8767`, `127.0.0.1:8768`, `file:`, `javascript:`, `http` externe.
 - [ ] Aucune nouvelle WebView n'est jamais créée ; aucune page externe ne s'affiche dans la fenêtre.
