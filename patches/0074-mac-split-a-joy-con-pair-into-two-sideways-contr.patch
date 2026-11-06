@@ -26,7 +26,7 @@ Issue: LNPANDY/NX2Apple#740
  create mode 100644 dm/host/pad_joycon_mac.h
 
 diff --git a/dm/host/Makefile b/dm/host/Makefile
-index 8b66f0b..2100b89 100644
+index 8b66f0b0..2100b890 100644
 --- a/dm/host/Makefile
 +++ b/dm/host/Makefile
 @@ -76,7 +76,7 @@ endif
@@ -39,7 +39,7 @@ index 8b66f0b..2100b89 100644
  clean:   # the host and everything make generates for it (gen/: the profile headers, the game stamp and the libvpx and dav1d builds; dmhost_* and *.dSYM beside them, as in .gitignore)
  	rm -rf gen dmhost dmhost_* *.dSYM
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 892df56..1d5f680 100644
+index 892df56c..1d5f6803 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -25,6 +25,7 @@
@@ -223,7 +223,7 @@ index 892df56..1d5f680 100644
                  pads_changed(conn ? nil : c);
                  if (conn) hq_log_setting(); }];
 diff --git a/dm/host/haptics_apple.h b/dm/host/haptics_apple.h
-index 2fd1b0f..d8ce98f 100644
+index 2fd1b0fd..d8ce98f2 100644
 --- a/dm/host/haptics_apple.h
 +++ b/dm/host/haptics_apple.h
 @@ -4,4 +4,5 @@
@@ -233,10 +233,10 @@ index 2fd1b0f..d8ce98f 100644
 +void dm_haptics_apple_controller_locality(int player, GCController *controller, GCHapticsLocality locality);
  void dm_haptics_apple_shutdown(void);
 diff --git a/dm/host/haptics_apple.m b/dm/host/haptics_apple.m
-index ba849d0..ca0414f 100644
+index ba849d01..ca0414f9 100644
 --- a/dm/host/haptics_apple.m
 +++ b/dm/host/haptics_apple.m
-@@ -39,6 +39,7 @@ - (void)stop;
+@@ -39,6 +39,7 @@
  static dispatch_queue_t queue;
  static NSMutableArray<DmRumbleChannel *> *channels[DM_PLAYERS];
  static GCController *controllers[DM_PLAYERS];
@@ -314,7 +314,7 @@ index ba849d0..ca0414f 100644
          [nc addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil usingBlock:^(NSNotification *n) { (void)n; suspend(DM_HAPTICS_INACTIVE, YES); }];
 diff --git a/dm/host/pad_joycon.h b/dm/host/pad_joycon.h
 new file mode 100644
-index 0000000..18a2f0d
+index 00000000..18a2f0d2
 --- /dev/null
 +++ b/dm/host/pad_joycon.h
 @@ -0,0 +1,139 @@
@@ -459,7 +459,7 @@ index 0000000..18a2f0d
 +}
 diff --git a/dm/host/pad_joycon_mac.h b/dm/host/pad_joycon_mac.h
 new file mode 100644
-index 0000000..a995be7
+index 00000000..a995be72
 --- /dev/null
 +++ b/dm/host/pad_joycon_mac.h
 @@ -0,0 +1,115 @@
@@ -579,10 +579,10 @@ index 0000000..a995be7
 +    }
 +}
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index f61c812..361cb46 100644
+index 1e667569..fb14703f 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
-@@ -353,7 +353,7 @@ tsan-threads-run: $(addprefix $(B)/,$(TSAN_T))
+@@ -361,7 +361,7 @@ tsan-threads-run: $(addprefix $(B)/,$(TSAN_T))
  	$(B)/t_altstack
  	DM_QOS_MAP=1 $(B)/t_notify_sched
  	DM_QOS_MAP=1 $(B)/t_notify_sched --all-peers
@@ -592,7 +592,7 @@ index f61c812..361cb46 100644
  
  # Line coverage (../../sanitizers/coverage.mk): make coverage builds every test of run into $(B)/cov with COV_FLAGS, runs them and writes $(B)/cov/coverage.lcov.
 diff --git a/dm/host/tests/t_haptics_apple.m b/dm/host/tests/t_haptics_apple.m
-index 27adba0..f7a5dfb 100644
+index 27adba0f..f7a5dfb1 100644
 --- a/dm/host/tests/t_haptics_apple.m
 +++ b/dm/host/tests/t_haptics_apple.m
 @@ -440,6 +440,20 @@ int main(void) { @autoreleasepool {
@@ -617,7 +617,7 @@ index 27adba0..f7a5dfb 100644
      dm_haptics_apple_shutdown();
      puts("Apple haptics: channels, pulses, idle release, startup handlers, engine replacement, backoff, stale callbacks, plain players, level cutoff and the DualShock 4 route passed");
 diff --git a/dm/host/tests/t_pad_hid.c b/dm/host/tests/t_pad_hid.c
-index 48341c7..898ad8f 100644
+index 48341c73..898ad8f6 100644
 --- a/dm/host/tests/t_pad_hid.c
 +++ b/dm/host/tests/t_pad_hid.c
 @@ -1,10 +1,97 @@
@@ -727,10 +727,10 @@ index 48341c7..898ad8f 100644
      return fails != 0;
  }
 diff --git a/dm/ios/tests/duo/Sources/DuoRuntimeStubs.m b/dm/ios/tests/duo/Sources/DuoRuntimeStubs.m
-index 2b64998..500e86f 100644
+index 2b649987..500e86fa 100644
 --- a/dm/ios/tests/duo/Sources/DuoRuntimeStubs.m
 +++ b/dm/ios/tests/duo/Sources/DuoRuntimeStubs.m
-@@ -103,6 +103,7 @@ void dm_motion_clear(int player) {
+@@ -103,6 +103,7 @@ void dm_haptics_set_enabled(int on) { g_rumble = on; }
  int duo_harness_rumble(void) { return g_rumble; }
  void dm_haptics_apple_init(void) {}
  void dm_haptics_apple_controller(int player, GCController *controller) { (void)player; (void)controller; }
@@ -739,10 +739,10 @@ index 2b64998..500e86f 100644
  int front_ios_boot_ok(void) { return 1; }
  void front_ios_boot(void) {}
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 732fea6..57e34f7 100644
+index ee8c65e9..05fe869a 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -86,6 +86,7 @@ DM_JIT_CAPTURE	path	Folder the Mac host writes what a game's `nn::jit` plugin ma
+@@ -90,6 +90,7 @@ DM_JIT_CAPTURE	path	Folder the Mac host writes what a game's `nn::jit` plugin ma
  DM_JIT_LOG	diagnostic	`1` logs every `nn::jit` `GenerateCode` request
  DM_JIT_MISS_DUMP	diagnostic	Folder for the input of each `nn::jit` request a served image lacks
  DM_JIT_SERVE	path	Folder of a `nn::jit` image (`jit.img`, `jit.tsv`, `jit.out`): the Mac serves requests from it as the iOS app does, and the plugin does not run

@@ -26,7 +26,7 @@ Issue: LNPANDY/NX2Apple#451
  create mode 100644 dm/ios/framework/ShellGlue.m
 
 diff --git a/dm/ios/Shell/Shell-Bridging-Header.h b/dm/ios/Shell/Shell-Bridging-Header.h
-index d7f5196..bf778b2 100644
+index d7f5196e..bf778b2c 100644
 --- a/dm/ios/Shell/Shell-Bridging-Header.h
 +++ b/dm/ios/Shell/Shell-Bridging-Header.h
 @@ -1,3 +1,2 @@
@@ -35,7 +35,7 @@ index d7f5196..bf778b2 100644
 -#include "../Sources/DmGameMenu.h"   // GameMenu.swift, the in-game menu (dm/ios/Sources)
 diff --git a/dm/ios/Shell/ShellGlue.h b/dm/ios/Shell/ShellGlue.h
 new file mode 100644
-index 0000000..e5b52e2
+index 00000000..e5b52e21
 --- /dev/null
 +++ b/dm/ios/Shell/ShellGlue.h
 @@ -0,0 +1,11 @@
@@ -51,7 +51,7 @@ index 0000000..e5b52e2
 +typedef void (*dm_glue_present_fn)(void *window);
 +typedef void (*dm_glue_focus_fn)(int ev);
 diff --git a/dm/ios/Shell/ShellMain.m b/dm/ios/Shell/ShellMain.m
-index 77d7ca3..7fb0bfc 100644
+index 77d7ca3e..7fb0bfc2 100644
 --- a/dm/ios/Shell/ShellMain.m
 +++ b/dm/ios/Shell/ShellMain.m
 @@ -1,29 +1,22 @@
@@ -93,7 +93,7 @@ index 77d7ca3..7fb0bfc 100644
  
  static NSString *documents(void) { return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0]; }
  
-@@ -52,10 +45,9 @@ static void log_to(NSString *log) {
+@@ -52,10 +45,9 @@ const char *dm_shell_start_game(const char *const *keys, const char *const *valu
          fprintf(stderr, "boot: %s=%s\n", keys[i], values[i]);   // every one: a report then shows which of the game's settings reached the engine
      }
      if (cwd && *cwd) chdir(cwd);
@@ -107,7 +107,7 @@ index 77d7ca3..7fb0bfc 100644
      if (!h) {
          snprintf(err, sizeof err, "The game's code could not be loaded: %s", dlerror() ?: "no reason given");
          fprintf(stderr, "[RED] boot: dlopen %s failed: %s\n", executable, err);
-@@ -69,11 +61,25 @@ static void log_to(NSString *log) {
+@@ -69,11 +61,25 @@ const char *dm_shell_start_game(const char *const *keys, const char *const *valu
          fprintf(stderr, "[RED] boot: %s: %s\n", executable, err);
          return err;
      }
@@ -181,7 +181,7 @@ index 77d7ca3..7fb0bfc 100644
  
  @interface App : UIResponder <UIApplicationDelegate>
  @end
-@@ -145,11 +120,11 @@ - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session op
+@@ -145,11 +120,11 @@ static UIInterfaceOrientationMask shell_orientations(UITraitCollection *traits)
      self.window.rootViewController = [ShellLibrary makeController];
      [self.window makeKeyAndVisible];
  }
@@ -200,7 +200,7 @@ index 77d7ca3..7fb0bfc 100644
  // The performance HUD (the per-game setting DM_METAL_HUD) needs MTL_HUD_ENABLED in the environment before Metal starts in this
 diff --git a/dm/ios/framework/ShellGlue.m b/dm/ios/framework/ShellGlue.m
 new file mode 100644
-index 0000000..810c4ad
+index 00000000..810c4ad2
 --- /dev/null
 +++ b/dm/ios/framework/ShellGlue.m
 @@ -0,0 +1,77 @@
@@ -282,7 +282,7 @@ index 0000000..810c4ad
 +// The shell showed its own settings before Play: the game view starts the game at once
 +bool dm_show_launcher(void *view_controller, void (*done)(void)) { (void)view_controller; (void)done; return false; }
 diff --git a/dm/ios/project-framework.yml b/dm/ios/project-framework.yml
-index d5d00b3..89a2df5 100644
+index d5d00b3d..89a2df5f 100644
 --- a/dm/ios/project-framework.yml
 +++ b/dm/ios/project-framework.yml
 @@ -131,6 +131,62 @@ targets:
@@ -349,7 +349,7 @@ index d5d00b3..89a2df5 100644
    ${DM_SCHEME_NAME}:
      build:
 diff --git a/dm/ios/project-shell.yml b/dm/ios/project-shell.yml
-index 92a36e8..60fda10 100644
+index 92a36e8f..60fda102 100644
 --- a/dm/ios/project-shell.yml
 +++ b/dm/ios/project-shell.yml
 @@ -23,21 +23,11 @@ targets:
@@ -376,7 +376,7 @@ index 92a36e8..60fda10 100644
        - package: ShellUI
          product: ShellUI
 diff --git a/dm/ios/tests/test_framework_link.py b/dm/ios/tests/test_framework_link.py
-index ccbba80..5c6d3d0 100644
+index ccbba80e..5c6d3d03 100644
 --- a/dm/ios/tests/test_framework_link.py
 +++ b/dm/ios/tests/test_framework_link.py
 @@ -120,6 +120,72 @@ class FrameworkLinkTests(unittest.TestCase):
@@ -453,7 +453,7 @@ index ccbba80..5c6d3d0 100644
  if __name__ == '__main__':
      unittest.main()
 diff --git a/dm/ios/tests/test_shell_build.py b/dm/ios/tests/test_shell_build.py
-index a2d527c..2f5b1ad 100644
+index a2d527cb..2f5b1ad5 100644
 --- a/dm/ios/tests/test_shell_build.py
 +++ b/dm/ios/tests/test_shell_build.py
 @@ -35,14 +35,14 @@ def font_python():
@@ -526,10 +526,10 @@ index a2d527c..2f5b1ad 100644
  
  @unittest.skipUnless(HAS_TOOLS and font_python(), 'needs macOS, XcodeGen, an iPhoneOS SDK and a python with fontTools')
 diff --git a/dm/ios/tools/build_ipa.sh b/dm/ios/tools/build_ipa.sh
-index 97d22d1..3f81541 100755
+index eec7ee4f..9f67e736 100755
 --- a/dm/ios/tools/build_ipa.sh
 +++ b/dm/ios/tools/build_ipa.sh
-@@ -209,9 +209,10 @@ if [ "$FRAMEWORK" = 1 ]; then
+@@ -214,9 +214,10 @@ if [ "$FRAMEWORK" = 1 ]; then
      mkdir -p "$O" && ROMFS_ID=$(python3 -I "$DM/tools/romfs_image.py" --identity "$ROMFS" "$GAME" "$DM_APP_VERSION" "${PKG:-}") || die "identity of $ROMFS"
    fi
    NRO_TABLE=$PATCHED/nro.tsv; [ -f "$NRO_TABLE" ] || NRO_TABLE=   # the NRO modules gen_embed.py packs: nro_count in the manifest
@@ -541,7 +541,7 @@ index 97d22d1..3f81541 100755
    printf 'OTHER_LDFLAGS = $(inherited) %s\n' "$F" > Gen/framework.xcconfig || die "framework link flags"
    t "framework: Gen/framework (modules $MODS, profile.tsv, game.manifest.json)"
  fi
-@@ -252,9 +253,9 @@ fi
+@@ -257,9 +258,9 @@ fi
  # game's per-game resources into it, so one folder is one game: the shader libraries (msl/<MSLDIR>, the shell's DM_MSL_DIR), the pipeline
  # archive (pso/, DM_PSO_BUNDLE) and the icon the shell's library shows. The game files and add-on content stay out (data, Documents/games/<id>/)
  if [ -n "$FRAMEWORK_ONLY" ]; then
@@ -554,7 +554,7 @@ index 97d22d1..3f81541 100755
      DM_XCODE_OUTPUT_ROOT="$DD" SYMROOT="$DD/Build/Products" OBJROOT="$DD/Build/Intermediates.noindex" build > "$O/build-framework.log" 2>&1 \
      || { grep -E 'error:' "$O/build-framework.log" | head -20; die "xcodebuild, log $O/build-framework.log"; }
 diff --git a/dm/ios/tools/build_shell.sh b/dm/ios/tools/build_shell.sh
-index d3cc308..8c9c2df 100755
+index d3cc308b..8c9c2dfb 100755
 --- a/dm/ios/tools/build_shell.sh
 +++ b/dm/ios/tools/build_shell.sh
 @@ -29,18 +29,19 @@ MODE=${1:-}; case "$MODE" in --prepare-xcode|--build) ;; *) die "usage: $0 --pre
@@ -608,7 +608,7 @@ index d3cc308..8c9c2df 100755
  "${FONT_PY:-python3}" "$DM/tools/make_ext_font.py" Gen/dm/font/nintendo_ext.ttf > /dev/null || die "make_ext_font.py (pip install fonttools, or FONT_PY=python with fontTools)"
  mkdir -p Gen/Assets.xcassets && printf '{"info":{"author":"xcode","version":1}}\n' > Gen/Assets.xcassets/Contents.json || die "asset catalog"
 diff --git a/dm/ios/tools/gen_manifest.py b/dm/ios/tools/gen_manifest.py
-index e1d302f..058b02d 100644
+index e1d302ff..058b02dc 100644
 --- a/dm/ios/tools/gen_manifest.py
 +++ b/dm/ios/tools/gen_manifest.py
 @@ -63,7 +63,7 @@ def manifest(args):

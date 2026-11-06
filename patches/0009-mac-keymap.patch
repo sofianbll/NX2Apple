@@ -23,7 +23,7 @@ Issue: LNPANDY/NX2Apple#386
  create mode 100644 dm/host/tests/t_launcher_contract.c
 
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index fdf092e..e5b32ca 100644
+index fdf092e2..e5b32ca6 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
 @@ -5,7 +5,8 @@
@@ -150,7 +150,7 @@ index fdf092e..e5b32ca 100644
          NSString *info = [NSString stringWithFormat:@"%s%s%s", sub ? sub : "", sub && *sub && guide && *guide ? "\n" : "", guide ? guide : ""];
 diff --git a/dm/host/input_map.h b/dm/host/input_map.h
 new file mode 100644
-index 0000000..56fa499
+index 00000000..56fa4993
 --- /dev/null
 +++ b/dm/host/input_map.h
 @@ -0,0 +1,82 @@
@@ -237,7 +237,7 @@ index 0000000..56fa499
 +}
 +static int pad_map_is_default(const pad_map *m) { for (int b = 0; b < IM_BUTTONS; b++) if (m->to[b] != b) return 0; return 1; }
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 435c402..d1fa46b 100644
+index ca6f5dc3..1dab12ea 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,7 +12,7 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
@@ -271,7 +271,7 @@ index 435c402..d1fa46b 100644
  $(B)/t_hid_tsan: t_hid.c ../hle_hid.c ../motion_fusion.h ../hle_haptics.c ../hle_haptics.h ../pad_slots.h ../dm_input.h ../hle.h ../dm.h $(GAME_H) | $(B)
 diff --git a/dm/host/tests/t_input_map.c b/dm/host/tests/t_input_map.c
 new file mode 100644
-index 0000000..96736ad
+index 00000000..96736ad6
 --- /dev/null
 +++ b/dm/host/tests/t_input_map.c
 @@ -0,0 +1,43 @@
@@ -320,7 +320,7 @@ index 0000000..96736ad
 +}
 diff --git a/dm/host/tests/t_launcher_contract.c b/dm/host/tests/t_launcher_contract.c
 new file mode 100644
-index 0000000..136b403
+index 00000000..136b4035
 --- /dev/null
 +++ b/dm/host/tests/t_launcher_contract.c
 @@ -0,0 +1,35 @@
@@ -360,7 +360,7 @@ index 0000000..136b403
 +    return fails != 0;
 +}
 diff --git a/dm/tools/impact_map.tsv b/dm/tools/impact_map.tsv
-index c3e768e..c3d5771 100644
+index c3e768e1..c3d57713 100644
 --- a/dm/tools/impact_map.tsv
 +++ b/dm/tools/impact_map.tsv
 @@ -132,6 +132,7 @@ dm/host/main.c	*:*	the host's start
@@ -372,7 +372,7 @@ index c3e768e..c3d5771 100644
  dm/host/motion_apple.h	hle:*SixAxisSensor*	controller motion supplied by GameController
  dm/host/pad_apple.h	hle:*hid*	controller face buttons from GameController
 diff --git a/docs/development.md b/docs/development.md
-index 6131969..b1ccc86 100644
+index 6131969b..b1ccc863 100644
 --- a/docs/development.md
 +++ b/docs/development.md
 @@ -14,6 +14,8 @@ The README covers packing and playing. This page is for working on nxnative itse
@@ -385,10 +385,10 @@ index 6131969..b1ccc86 100644
  
  How a Switch with Atmosphère runs cheats, and where this host differs, is in [Cheats on a Switch](reference/cheats.md).
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 0995d98..9da039d 100644
+index 8396c9b7..e0e6006f 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -81,6 +81,7 @@ DM_JIT_MISS_DUMP	diagnostic	Folder for the input of each `nn::jit` request a ser
+@@ -85,6 +85,7 @@ DM_JIT_MISS_DUMP	diagnostic	Folder for the input of each `nn::jit` request a ser
  DM_JIT_SERVE	path	Folder of a `nn::jit` image (`jit.img`, `jit.tsv`, `jit.out`): the Mac serves requests from it as the iOS app does, and the plugin does not run
  DM_KBD	switch	`=<text>`: the system keyboard returns that text as OK without showing an input box; unset with no window, it returns cancel
  DM_KBD_PLAYER	switch	`own` makes the Mac keyboard player 1 on its own, with controllers from player 2 on (by default the first controller shares player 1 with the keyboard)
@@ -396,7 +396,7 @@ index 0995d98..9da039d 100644
  DM_KEYS	switch	Scripted input: `<seconds or f<frame>>:<key>[+key][~hold or ~f<frames>][*count/interval],…` presses buttons, sticks, touches and `Shake` at those times; `=@<file>` reads the steps from the file
  DM_LANG	player	Game language as a language code (default `en-US`; the iOS app sets the one the IPA was packed with)
  DM_LAUNCHER	switch	`0` skips the iOS settings screen or the Mac settings window and starts the game at once, with the saved choices (on the Mac also `--no-launcher`)
-@@ -224,6 +225,7 @@ DM_OODLE_JOB	path	`=<job file>`: the host runs the game's own Oodle decoder on e
+@@ -228,6 +229,7 @@ DM_OODLE_JOB	path	`=<job file>`: the host runs the game's own Oodle decoder on e
  DM_OODLE_MODULES	path	The rewritten modules the Mac host's Oodle tool mode loads when `shader_split.py` decodes Trinity packs; set by the NSP script
  DM_OODLE_SERVE	switch	`=1`: the host answers decode requests on stdin / stdout with the game's own Oodle (or LZ5) decoder from the guest main thread before the SDK starts, until stdin ends
  DM_OPMODE	player	The operation mode the game sees: `0` handheld, `1` console (default: the profile's `op_mode`, console unless set); read once at startup

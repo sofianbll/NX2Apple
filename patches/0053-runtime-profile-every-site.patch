@@ -44,7 +44,7 @@ Issue: LNPANDY/NX2Apple#144
  create mode 100644 dm/tools/tests/test_game_profile_runtime.py
 
 diff --git a/dm/games/game.py b/dm/games/game.py
-index a8f472a..b6e546a 100644
+index a8f472a8..b6e546a2 100644
 --- a/dm/games/game.py
 +++ b/dm/games/game.py
 @@ -293,7 +293,8 @@ if __name__ == '__main__':
@@ -69,7 +69,7 @@ index a8f472a..b6e546a 100644
              L.append(f'display_version\t{b}\t{d}')
          text = '\n'.join(L) + '\n'
 diff --git a/dm/gfx/nvn/hle_nvn.c b/dm/gfx/nvn/hle_nvn.c
-index 904fbec..35441ea 100644
+index 904fbec2..35441ea8 100644
 --- a/dm/gfx/nvn/hle_nvn.c
 +++ b/dm/gfx/nvn/hle_nvn.c
 @@ -192,16 +192,14 @@ __attribute__((weak)) int dm_sdk_ounce(void) { return 0; }
@@ -222,7 +222,7 @@ index 904fbec..35441ea 100644
  }
  // Fire Emblem: Three Houses turns depth clamp on for its scenes; ignored, the ground right under its close-up battle cameras was clipped away and the lighting pass painted the sky's fog colour there
 diff --git a/dm/gfx/nvn/nvn_capture.h b/dm/gfx/nvn/nvn_capture.h
-index bec00f5..b1c688a 100644
+index bec00f50..b1c688a8 100644
 --- a/dm/gfx/nvn/nvn_capture.h
 +++ b/dm/gfx/nvn/nvn_capture.h
 @@ -68,7 +68,7 @@ typedef struct { uint32_t index; int32_t n; uint64_t pool; int64_t off; int32_t
@@ -235,7 +235,7 @@ index bec00f5..b1c688a 100644
  typedef struct { tex_t t; uint32_t kind, pad; } cap_tknd;   // t: relocated
  typedef struct { tex_t t; uint32_t pixfmt, type, width, height, depth, levels, slices, samples, nsub, pad; } cap_tpix;   // t: relocated, the texture to create and fill
 diff --git a/dm/gfx/nvn/nvn_capture.inc b/dm/gfx/nvn/nvn_capture.inc
-index be405db..bb0b536 100644
+index be405dbf..bb0b5368 100644
 --- a/dm/gfx/nvn/nvn_capture.inc
 +++ b/dm/gfx/nvn/nvn_capture.inc
 @@ -329,7 +329,7 @@ static void cap_head(void) {
@@ -248,7 +248,7 @@ index be405db..bb0b536 100644
      for (char **e = *_NSGetEnviron(); *e; e++) if (!strncmp(*e, "DM_", 3) && strncmp(*e, "DM_NVN_CAPTURE=", 15)) KV("env\t%s\n", *e);
  #undef KV
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 3a28360..5d7f618 100644
+index 3a28360a..5d7f6180 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -430,7 +430,7 @@ void mtl_init(void) {
@@ -260,7 +260,7 @@ index 3a28360..5d7f618 100644
      if (g_bc_cpu) MLOG("BC textures: this GPU has no BC support, decoding them on the CPU (profile tex_bc_cpu)");
      g_q = [g_dev newCommandQueue];
      // A device without Metal 4 (the paravirtualized GPU of a virtual Mac, such as GitHub's macos-26 runner: no residency set, no MTL4CommandQueue) cannot run the NVN layer. The GL and
-@@ -1513,7 +1513,7 @@ static void post(post_op o) {
+@@ -1513,7 +1513,7 @@ static uint64_t gpu_ticks(void) { uint64_t g = guest_ns(); if (!g) { struct time
  // so a game that waits for the fence reads one submission's reports together; a segment whose feedback has not arrived by then takes the last segment's times
  #define SEG_CLK_N 1024
  struct seg_clk { _Atomic int refs; _Atomic uint64_t t[SEG_CLK_N][2]; };   // per submission (g_sclk, allocated at its first cut): guest ns of each cut segment's GPU start / end (0 = no feedback yet)
@@ -278,7 +278,7 @@ index 3a28360..5d7f618 100644
      }
      free(ops); seg_clk_put(sc); r->ops = NULL; r->sc = NULL;
      atomic_store(&r->claimed, 1);
-@@ -3338,7 +3338,7 @@ static void sparse_view(NvPkg *pk, const tex_t *t) {
+@@ -3338,7 +3338,7 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
          }
      }
      id have = tex_get(t->serial);
@@ -287,7 +287,7 @@ index 3a28360..5d7f618 100644
      if (!packaged && !have && on_sub_thread() && tex_cpu_content(t)) { mtl_tex_cpu_written(t); packaged = 1; }   // storage the CPU wrote before its first use (tex_cpu_content)
      if (packaged) {
          NvPkg *pk = [have isKindOfClass:[NvPkg class]] ? have : nil;   // resolved as GPU-only before the CPU wrote it: dropped and rebuilt as packaged
-@@ -4431,7 +4431,7 @@ static int clear_rect_zero(int i) {
+@@ -4431,7 +4431,7 @@ static void shmap_load(void) { shmap_read_once(); static int warmed; if (!warmed
  static void shmap_read(void) {
      if (g_shmap) return;
      const char *e = getenv("DM_NVN_SHMAP");
@@ -305,7 +305,7 @@ index 3a28360..5d7f618 100644
      else MLOG("shader library stamp: game %s, inputs %s", st_game.UTF8String, st_inputs.UTF8String);
      NSString *cp = [[path stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"c1_full.tsv"];   // Same directory as the mapping table (Mac: dm/games/<id>; iOS: dm/ inside the App, copied along by build_ipa.sh)
      NSString *ct = cp ? [NSString stringWithContentsOfFile:cp encoding:NSUTF8StringEncoding error:nil] : nil;
-@@ -4722,7 +4722,7 @@ @implementation FnDev @end
+@@ -4722,7 +4722,7 @@ static NvShader *shader_load(NSString *pc, int stage, int layer) {
      if (stage == 0 && [j[@"layer_from"] isKindOfClass:[NSDictionary class]]) { o->lay_loc = [j[@"layer_from"][@"loc"] intValue]; o->lay_comp = [[j[@"layer_from"][@"comp"] description] UTF8String][0]; }
      char err[160];
      if (nvn_refl_from_json(j, &o->rf, err, sizeof err)) { MLOG("[RED] shader %s reflection conversion failed: %s", pc.UTF8String, err); return nil; }
@@ -314,7 +314,7 @@ index 3a28360..5d7f618 100644
          // (rf.c1 is freed by dealloc when o goes: freeing it here too was a double free, which aborted FINAL FANTASY RESONANCE at its first such shader)
          MLOG("[RED] shader %s reflection conversion failed: a texture handle the translator could not trace to one slot (profile key tex_dyn_slots off)", pc.UTF8String); return nil; }
      if (rt_range_on()) o->range_ro=rt_range_bindings_ro(j);
-@@ -6145,7 +6145,7 @@ static void vconv_fill(int f, uint64_t src, uint32_t stride, uint64_t nv, float
+@@ -6145,7 +6145,7 @@ typedef struct { uint64_t ibuf; int32_t count, itype; } ir_key;
  typedef struct { uint32_t mn, mx; uint64_t stamp, seen, lo, n; const void *span; int gpuw; } ir_ent;   // gpuw: a GPU write was queued on the indices: never trusted again
  static nvn_hmap g_ir = {.klen = sizeof(ir_key)};
  static uint64_t g_vc_rgn[VC_RGN / 64], g_vc_stat, g_vc_conv, g_vc_whole, g_vc_checks, g_vc_bad;   // g_vc_rgn: 1 MB regions holding a kept index range (hashed); g_vc_conv / g_vc_whole: vertices converted / in the bound ranges
@@ -350,7 +350,7 @@ index 3a28360..5d7f618 100644
                  if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) { post((post_op){3, NULL, 0, 0, ad, (uint32_t)t, vis_snapshot()}); g_vis_cur = -1; }
                  else mtl_sub_counter(ad, (uint32_t)t);
                  break; }
-@@ -13528,9 +13528,10 @@ uint64_t mtl_present_ext(uint64_t serial, double period, void *ev, uint64_t ev_v
+@@ -13528,9 +13528,10 @@ static int g_snap_n = 2;
  int mtl_snap_on(void) {
      static int v = -1; if (v >= 0) return v;
      const char *e = getenv("DM_PRESENT_SNAP");
@@ -363,7 +363,7 @@ index 3a28360..5d7f618 100644
  }
  static void snap_commit_wait(uint64_t v) { if (v) rec_note_wait(&g_snap_cmt, v); }
 diff --git a/dm/gfx/nvn/nvn_rec.h b/dm/gfx/nvn/nvn_rec.h
-index 3a3f5e0..10032d6 100644
+index 3a3f5e04..10032d6b 100644
 --- a/dm/gfx/nvn/nvn_rec.h
 +++ b/dm/gfx/nvn/nvn_rec.h
 @@ -82,7 +82,7 @@ static inline int rec_on(void) {
@@ -376,7 +376,7 @@ index 3a3f5e0..10032d6 100644
      if (g_rec) MLOG("Metal encoding runs on its own thread (DM_NVN_ENC_THREAD=0 turns it off)");
      return g_rec;
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 5288b37..91a49ea 100644
+index 5288b37c..91a49ea3 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
 @@ -47,10 +47,10 @@ t_transform_feedback: t_transform_feedback.m $(MTL_T_DEP)
@@ -395,7 +395,7 @@ index 5288b37..91a49ea 100644
  	clang $(CFLAGS) -o $@ t_dirty_slots.c ../../host/crash.c ../nvn/nvn_dirty.c
  t_dirty_race: t_dirty_race.c ../nvn/nvn_dirty.c ../../host/crash.c ../nvn/nvn_dirty.h $(GAME_H)
 diff --git a/dm/gfx/tests/t_host_stubs.c b/dm/gfx/tests/t_host_stubs.c
-index 8f9b3f8..24d3c63 100644
+index 8f9b3f85..24d3c633 100644
 --- a/dm/gfx/tests/t_host_stubs.c
 +++ b/dm/gfx/tests/t_host_stubs.c
 @@ -4,3 +4,5 @@ __attribute__((weak)) uint64_t g_t0_ns;   // process start time (host main.c), r
@@ -405,10 +405,10 @@ index 8f9b3f8..24d3c63 100644
 +// The runtime profile the NVN layer reads (dm_profile in hle_profile.c): no DM_PROFILE in a test, so these are the compiled game_profile.h values
 +#include "../../host/hle_profile.c"
 diff --git a/dm/host/front_mac.m b/dm/host/front_mac.m
-index 44eaf20..bf0a91e 100644
+index 44eaf205..bf0a91e9 100644
 --- a/dm/host/front_mac.m
 +++ b/dm/host/front_mac.m
-@@ -942,7 +942,7 @@ - (BOOL)control:(NSControl *)c textView:(NSTextView *)tv doCommandBySelector:(SE
+@@ -942,7 +942,7 @@ static NSTextField *panel_note(NSString *text) {
  // the path came in. build: this build's ID (read from the engine on the main thread by the caller). Runs on a background
  // queue (findCheats:): it touches only the file system and Foundation, never AppKit or the cheats engine
  static NSArray<NSURL *> *found_cheat_files(NSString *build) {
@@ -417,7 +417,7 @@ index 44eaf20..bf0a91e 100644
      NSString *as = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support"];
      NSMutableArray<NSString *> *dirs = [NSMutableArray array];
      NSFileManager *fm = NSFileManager.defaultManager;
-@@ -1030,7 +1030,7 @@ - (BOOL)importFiles:(NSArray<NSURL *> *)urls {
+@@ -1030,7 +1030,7 @@ static NSArray<NSURL *> *found_cheat_files(NSString *build) {
      const char *dirc = dm_cheats_dir_path();
      if (!dirc || !*dirc || strlen(dm_cheats_build()) != 16) { NSBeep(); return NO; }   // no folder, or no build ID to name a file by
      NSString *dir = engine_str(dirc), *build = engine_str(dm_cheats_build());
@@ -445,7 +445,7 @@ index 44eaf20..bf0a91e 100644
          g_cheats_menu = [DmCheatsMenuDelegate new];
          NSMenu *cm = [[NSMenu alloc] initWithTitle:@"Cheats"];
 diff --git a/dm/host/hle_cheats.c b/dm/host/hle_cheats.c
-index 3039303..fac8693 100644
+index 30393034..fac8693b 100644
 --- a/dm/host/hle_cheats.c
 +++ b/dm/host/hle_cheats.c
 @@ -129,7 +129,7 @@ static char g_dir[1024];       // cheats folder (DM_CHEATS or <DM_ROOT>/cheats),
@@ -481,7 +481,7 @@ index 3039303..fac8693 100644
      // match itself is case-insensitive (name_is_build lower-cases both sides)
      const char *bid = dm_main_build();
 diff --git a/dm/host/hle_fs.c b/dm/host/hle_fs.c
-index 426dcab..9c6f50d 100644
+index 426dcabd..9c6f50d2 100644
 --- a/dm/host/hle_fs.c
 +++ b/dm/host/hle_fs.c
 @@ -651,7 +651,7 @@ HLE_FORCE("_ZN2nn2fs13MountSaveDataEPKcRKNS_7account3UidE", "fsp-srv; save data
@@ -503,7 +503,7 @@ index 426dcab..9c6f50d 100644
      return mount_ex(name, dd, 0, 1);
  }
 diff --git a/dm/host/hle_oe.c b/dm/host/hle_oe.c
-index a079a02..14d284c 100644
+index a079a029..14d284ca 100644
 --- a/dm/host/hle_oe.c
 +++ b/dm/host/hle_oe.c
 @@ -12,7 +12,7 @@
@@ -525,7 +525,7 @@ index a079a02..14d284c 100644
  // the default display resolution is the TV's (1080p docked) or the panel's (720p handheld) and only changes with the operation mode
  // Taiko Risshiden V DX (SDK 12.3.3) turns it on in nnMain (main+0x2e1e4c): the setter goes through the same apm session (null read at sdk+0x362b8). The host does not scale clocks;
 diff --git a/dm/host/hle_profile.c b/dm/host/hle_profile.c
-index 7543e08..ba22ff7 100644
+index 7543e083..ba22ff70 100644
 --- a/dm/host/hle_profile.c
 +++ b/dm/host/hle_profile.c
 @@ -103,6 +103,22 @@ static uint64_t num(const char *v, uint64_t dflt) {
@@ -611,7 +611,7 @@ index 7543e08..ba22ff7 100644
 +        (unsigned long long)p->stdalloc_cap, p->shader_skip_off, p->shader_skip_len, p->tex_bc_cpu, p->ue_texture_pool, p->enc_thread);
  }
 diff --git a/dm/host/hle_profile.h b/dm/host/hle_profile.h
-index a2febeb..5afd846 100644
+index a2febeb3..5afd846b 100644
 --- a/dm/host/hle_profile.h
 +++ b/dm/host/hle_profile.h
 @@ -3,6 +3,7 @@
@@ -644,7 +644,7 @@ index a2febeb..5afd846 100644
 +    return p;
 +}                   // one line per differing value (called after loading)
 diff --git a/dm/host/hle_sdk16.c b/dm/host/hle_sdk16.c
-index eb7e0f1..6d397ff 100644
+index eb7e0f14..6d397ff5 100644
 --- a/dm/host/hle_sdk16.c
 +++ b/dm/host/hle_sdk16.c
 @@ -14,10 +14,10 @@
@@ -681,10 +681,10 @@ index eb7e0f1..6d397ff 100644
      return (size_t)skip;
  }
 diff --git a/dm/host/hle_svc.c b/dm/host/hle_svc.c
-index ea76b71..4069ab8 100644
+index 3b391975..03e01c95 100644
 --- a/dm/host/hle_svc.c
 +++ b/dm/host/hle_svc.c
-@@ -379,11 +379,11 @@ static uint64_t alias_room(void) {
+@@ -551,11 +551,11 @@ static uint64_t alias_room(void) {
  static void stdalloc_init(uint64_t *r, int param) {
      (void)param;
      if (r[1]) return;   // a heap over memory the game passes in: no address region
@@ -699,7 +699,7 @@ index ea76b71..4069ab8 100644
  }
  // ---- Unreal's engine region ----
 diff --git a/dm/host/hle_thread.c b/dm/host/hle_thread.c
-index 13d9587..38e94d4 100644
+index 13d9587a..38e94d4e 100644
 --- a/dm/host/hle_thread.c
 +++ b/dm/host/hle_thread.c
 @@ -528,7 +528,7 @@ static void hitch_init(void) {
@@ -712,7 +712,7 @@ index 13d9587..38e94d4 100644
      hitch_init();
      thr_t *t = calloc(1, sizeof *t);
 diff --git a/dm/host/hle_uecvar.c b/dm/host/hle_uecvar.c
-index e575d5f..cffd142 100644
+index e575d5f1..cffd142a 100644
 --- a/dm/host/hle_uecvar.c
 +++ b/dm/host/hle_uecvar.c
 @@ -24,8 +24,8 @@ void dm_ue_cvar_tick(void) {
@@ -727,7 +727,7 @@ index e575d5f..cffd142 100644
          if (!obj_off) { LOG("[RED] main: Unreal r.Streaming.PoolSize not found in main by the rewriter (ue_cvar.py; %s %d MB not applied)", src, target); return; }
          LOG("main: Unreal r.Streaming.PoolSize at main+%#llx, raised to %d MB (%s)", (unsigned long long)obj_off, target, src);
 diff --git a/dm/host/main.c b/dm/host/main.c
-index 6617759..af89a94 100644
+index 66177597..af89a94a 100644
 --- a/dm/host/main.c
 +++ b/dm/host/main.c
 @@ -115,7 +115,8 @@ static void host_preload(int argc, char **argv) {
@@ -767,7 +767,7 @@ index 6617759..af89a94 100644
      dm_cheats_init();   // the Atmosphère cheat files for this build (hle_cheats.c): picked by first 16 hex digits of main's build ID, which the loader knows now
      dm_sdk_major();   // logs the SDK version, which SDK-dependent behaviour follows (loader.c)
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index d1fa46b..f61c812 100644
+index 1dab12ea..1e667569 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,7 +12,7 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
@@ -805,7 +805,7 @@ index d1fa46b..f61c812 100644
  $(B)/t_swkbd: t_swkbd.c ../hle_swkbd.c ../hle.h ../dm.h $(GAME_H) | $(B)
  	$(CLANG) -O1 -Wno-unused-function -I.. $(GINC) -o $@ t_swkbd.c ../hle_swkbd.c
  run: $(B)/t_bigstack
-@@ -364,3 +365,9 @@ coverage:
+@@ -372,3 +373,9 @@ coverage:
  	rm -rf $(B)/cov/prof
  	LLVM_PROFILE_FILE="$(call cov_profile,$(B)/cov)" $(MAKE) -i B=$(B)/cov SAN="$(COV_FLAGS)" run
  	@$(call cov_export,$(B)/cov)
@@ -817,7 +817,7 @@ index d1fa46b..f61c812 100644
 +	TMPDIR="$(abspath $(B))" $(B)/t_profile_runtime
 diff --git a/dm/host/tests/t_profile_runtime.c b/dm/host/tests/t_profile_runtime.c
 new file mode 100644
-index 0000000..c4b4194
+index 00000000..c4b4194c
 --- /dev/null
 +++ b/dm/host/tests/t_profile_runtime.c
 @@ -0,0 +1,100 @@
@@ -923,7 +923,7 @@ index 0000000..c4b4194
 +}
 diff --git a/dm/tools/tests/test_game_profile_runtime.py b/dm/tools/tests/test_game_profile_runtime.py
 new file mode 100644
-index 0000000..46e8f89
+index 00000000..46e8f895
 --- /dev/null
 +++ b/dm/tools/tests/test_game_profile_runtime.py
 @@ -0,0 +1,54 @@

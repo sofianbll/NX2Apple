@@ -16,7 +16,7 @@ Issue: LNPANDY/NX2Apple#123
  3 files changed, 24 insertions(+), 16 deletions(-)
 
 diff --git a/dm/tools/docs_gallery.py b/dm/tools/docs_gallery.py
-index 32f3965..5994375 100644
+index 32f39659..59943754 100644
 --- a/dm/tools/docs_gallery.py
 +++ b/dm/tools/docs_gallery.py
 @@ -1,15 +1,23 @@
@@ -86,7 +86,7 @@ index 32f3965..5994375 100644
      else:
          OUT.write_text(text, encoding='utf-8')
 diff --git a/dm/tools/tests/test_docs.py b/dm/tools/tests/test_docs.py
-index 590343e..635c44e 100644
+index 590343e4..635c44ef 100644
 --- a/dm/tools/tests/test_docs.py
 +++ b/dm/tools/tests/test_docs.py
 @@ -1,7 +1,7 @@
@@ -117,7 +117,7 @@ index 590343e..635c44e 100644
  
      def test_reversed_markers_fail_before_writing(self):
 diff --git a/docs/RELEASE-NOTES-GUIDE.md b/docs/RELEASE-NOTES-GUIDE.md
-index ba1f332..116d6e8 100644
+index ba1f3323..116d6e85 100644
 --- a/docs/RELEASE-NOTES-GUIDE.md
 +++ b/docs/RELEASE-NOTES-GUIDE.md
 @@ -53,11 +53,11 @@ same section order, and a reader picks one and reads straight through.

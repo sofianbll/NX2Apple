@@ -39,7 +39,7 @@ Issue: LNPANDY/NX2Apple#749
 
 diff --git a/dm/tools/tests/test_nsp_experimental_builder.py b/dm/tools/tests/test_nsp_experimental_builder.py
 new file mode 100644
-index 0000000..444e186
+index 00000000..444e1864
 --- /dev/null
 +++ b/dm/tools/tests/test_nsp_experimental_builder.py
 @@ -0,0 +1,211 @@
@@ -255,7 +255,7 @@ index 0000000..444e186
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 83e5942..732fea6 100644
+index 5c01701d..ee8c65e9 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
 @@ -36,6 +36,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into
@@ -267,7 +267,7 @@ index 83e5942..732fea6 100644
  DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
  DM_FOCUS_KEEP	switch	`1` keeps the game in focus while its Mac window is up, whichever app is active (minimizing still counts); `scripts/regress.py` sets it, so another app taking the key window during a run does not pause a game that stops out of focus
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 486a464..ed02d0d 100755
+index 284d341f..e28f900e 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -33,6 +33,7 @@

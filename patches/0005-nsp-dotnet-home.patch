@@ -14,7 +14,7 @@ Issue: LNPANDY/NX2Apple#10
  1 file changed, 19 insertions(+), 1 deletion(-)
 
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 48eb007..75ad0a7 100755
+index bec2ce66..bb7d2c7d 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -33,7 +33,7 @@

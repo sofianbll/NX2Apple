@@ -19,7 +19,7 @@ Issue: LNPANDY/NX2Apple#342
  2 files changed, 60 insertions(+)
 
 diff --git a/dm/tools/tests/test_nsp_dotnet.py b/dm/tools/tests/test_nsp_dotnet.py
-index f81a641..80cda9e 100644
+index f81a6413..80cda9e1 100644
 --- a/dm/tools/tests/test_nsp_dotnet.py
 +++ b/dm/tools/tests/test_nsp_dotnet.py
 @@ -6,6 +6,7 @@ import os
@@ -77,7 +77,7 @@ index f81a641..80cda9e 100644
 +
  if __name__ == '__main__': unittest.main()
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 59f3df7..486a464 100755
+index ccd0989a..284d341f 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
 @@ -442,6 +442,23 @@ def configure_dotnet(env):
