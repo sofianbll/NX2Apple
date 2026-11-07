@@ -75,7 +75,7 @@ import NXCore
     package init(localizer: Localizer, runner: ProcessRunner, repo: RepoLocation, python: PythonLocation,
                  engineStore: EngineStore = EngineStore(), transport: EngineTransport = URLSessionEngineTransport(),
                  bundle: URL? = EngineBundle.tree(in: Bundle.main.resourceURL), defaults: UserDefaults = .standard,
-                 appVersion: String = AppUpdateStore.appVersion,
+                 appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? AppUpdateStore.appVersion,
                  setRepoPath: @escaping (String) -> Void = { _ in }, buildRunning: @escaping () -> Bool = { false },
                  autoUpdate: @escaping () -> Bool = { true }, log: @escaping (String) -> Void = { _ in }) {
         self.localizer = localizer
@@ -92,6 +92,8 @@ import NXCore
         self.autoUpdate = autoUpdate
         self.log = log
         selection = EngineSelection.load(defaults)
+        // A try-local build has no release manifest: its real -local version and stable channel keep its bundled engine.
+        if appVersion.hasSuffix("-local") { selection.channel = .stable }
     }
 
     private func t(_ key: String) -> String { localizer.t(key) }

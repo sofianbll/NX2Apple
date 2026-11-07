@@ -62,10 +62,10 @@ import XCTest
         try touch(EngineStore.idFile, in: dir, engineID)
     }
 
-    private func makeStore(bundle: URL? = nil, engines: EngineStore? = nil) -> EngineSyncStore {
+    private func makeStore(bundle: URL? = nil, engines: EngineStore? = nil, appVersion: String = "1.2.3") -> EngineSyncStore {
         EngineSyncStore(localizer: localizer, runner: runner, repo: repo, python: python,
                         engineStore: engines ?? EngineStore(root: temporary.appendingPathComponent("engines")),
-                        bundle: bundle, defaults: defaults, appVersion: "1.2.3",
+                        bundle: bundle, defaults: defaults, appVersion: appVersion,
                         setRepoPath: { [unowned self] in repo.path = $0; movedTo.append($0) },
                         buildRunning: { [unowned self] in building }, autoUpdate: { [unowned self] in autoUpdate },
                         log: { [unowned self] in log.append($0) })
@@ -268,6 +268,26 @@ import XCTest
         store.prepareEngine()
         XCTAssertEqual(repo.path, engines.directory(for: id("a"))?.path)
         XCTAssertFalse(store.busy)
+    }
+
+    func testATryLocalBuildUsesItsOwnEngineAfterAnOfficialSession() async throws {
+        let engines = EngineStore(root: temporary.appendingPathComponent("engines"))
+        let bundled = temporary.appendingPathComponent("bundled")
+        for file in EngineStore.requiredFiles { try touch(file, in: bundled) }
+        try touch(EngineStore.idFile, in: bundled, id("b"))
+        try install(id("a"), in: engines)
+        EngineSelection(channel: .experimental, engineID: id("a"), version: "1.2.3", previousID: "").save(defaults)
+        building = true   // seed first, without a network check while a build holds the old engine
+        let store = makeStore(bundle: bundled, engines: engines, appVersion: "1.2.3-local")
+        XCTAssertEqual(store.selection.channel, .stable)
+        await store.prepareEngine().value
+        XCTAssertEqual(store.pendingEngine?.engine.id, id("b"))
+        building = false
+        store.applyPendingEngine()
+        XCTAssertEqual(repo.path, engines.directory(for: id("b"))?.path)
+        XCTAssertEqual(store.selection.engineID, id("b"))
+        XCTAssertEqual(store.selection.version, "1.2.3-local")
+        XCTAssertEqual(EngineSelection.load(defaults).engineID, id("b"))
     }
 
     func testTheDetailNamesTheVersionAndThePin() {
