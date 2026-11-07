@@ -121,7 +121,7 @@ Screenshots, with a note where a game has one (a frame rate, a limit). Upstream 
 <tr>
 <td align="center" valign="top" width="33%"><img src="https://raw.githubusercontent.com/seedds/nxnative/ab41d6a177819559c76d8e4381791550ababa097/docs/images/pikmin-4.jpg" width="256" alt="Pikmin 4"><br><small><b><a href="https://github.com/seedds/nxnative/blob/ab41d6a177819559c76d8e4381791550ababa097/dm/games/0100B7C00933A000/README.md">Pikmin 4</a></b><br>60 fps, up to 120 on the Mac</small></td>
 <td align="center" valign="top" width="33%"><img src="https://raw.githubusercontent.com/seedds/nxnative/ab41d6a177819559c76d8e4381791550ababa097/docs/images/pokemon-brilliant-diamond.jpg" width="256" alt="Pokémon Brilliant Diamond"><br><small><b><a href="https://github.com/seedds/nxnative/blob/ab41d6a177819559c76d8e4381791550ababa097/dm/games/0100000011D90000/README.md">Pokémon Brilliant Diamond</a></b><br>60 fps with 1.3.0</small></td>
-<td align="center" valign="top" width="33%"><img src="https://raw.githubusercontent.com/seedds/nxnative/ab41d6a177819559c76d8e4381791550ababa097/docs/images/pokemon-legends-z-a.jpg" width="256" alt="Pokémon Legends: Z-A"><br><small><b><a href="https://github.com/seedds/nxnative/blob/ab41d6a177819559c76d8e4381791550ababa097/dm/games/0100F43008C44000/README.md">Pokémon Legends: Z-A</a></b></small></td>
+<td align="center" valign="top" width="33%"><img src="https://raw.githubusercontent.com/seedds/nxnative/ab41d6a177819559c76d8e4381791550ababa097/docs/images/pokemon-legends-z-a.jpg" width="256" alt="Pokémon Legends: Z-A"><br><small><b><a href="https://github.com/seedds/nxnative/blob/ab41d6a177819559c76d8e4381791550ababa097/dm/games/0100F43008C44000/README.md">Pokémon Legends: Z-A</a></b><br>60 fps option (2.0.2)</small></td>
 </tr>
 <tr>
 <td align="center" valign="top" width="33%"><img src="https://raw.githubusercontent.com/seedds/nxnative/ab41d6a177819559c76d8e4381791550ababa097/docs/images/pokemon-scarlet.png" width="256" alt="Pokémon Scarlet"><br><small><b><a href="https://github.com/seedds/nxnative/blob/ab41d6a177819559c76d8e4381791550ababa097/dm/games/0100A3D008C5C000/README.md">Pokémon Scarlet</a></b></small></td>
@@ -458,4 +458,3 @@ so without that step the request would be lost. **AltStore Classic 2.2+**, **Imp
 with a Personal Team** keep it. **SideStore** with a free Apple ID needs a one-time App ID fix,
 but **Sideloadly** does not. See [ENTITLEMENTS.md](ENTITLEMENTS.md) for the steps and how
 to tell from `Documents/log.txt` (resident + headroom: ~3,375 MB = not in effect, 6–8 GB = it is).
-
