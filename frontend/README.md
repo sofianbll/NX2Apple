@@ -211,8 +211,11 @@ and `env.txt` retain their precedence. `DM_SAVED_CHOICES=0` prevents migration a
 preserves the legacy launch environment. No controller preferences are written while
 saved choices are disabled.
 
-Direct raw Steam input belongs to built games. Library and console navigation in
-NX2Apple continue to depend on Apple's GameController support.
+Direct raw Steam input belongs to built games. Library, console and onboarding
+navigation use GameController, plus raw HID for other pads that GameController claims
+but has not listed after two seconds. Xbox, PlayStation and Nintendo pads always stay
+with GameController. Pro Controller clones whose buttons arrive in report `0x3F` use
+that report's numbering, and a pad returns to GameController if it appears later.
 
 macOS may require **System Settings → Privacy & Security → Input Monitoring**
 permission for the game app's direct Steam input. Bluetooth pairing alone does not

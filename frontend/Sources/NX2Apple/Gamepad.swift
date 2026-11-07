@@ -137,6 +137,7 @@ final class LauncherGamepad: ObservableObject {
     private var inputGeneration = 0
     private var gcControllerIDs: Set<String> = []
     private var observers: [NSObjectProtocol] = []
+    private var hid: LauncherHIDManager?
     private var repeatTimer: Timer?
     private var repeating: Action?
     private var repeatingController: String?
@@ -172,10 +173,17 @@ final class LauncherGamepad: ObservableObject {
             })
             observers.append(center.addObserver(forName: .steamLinkPadsChanged, object: steam, queue: .main) { [weak self] note in
                 if let id = note.userInfo?["removed"] as? String { self?.disconnected(id) }
-                self?.connected = !GCController.controllers().isEmpty || !steam.snapshots.isEmpty
+                self?.updateConnected()
             })
         }
-        if observeSystem { attach() }
+        if observeSystem {
+            hid = LauncherHIDManager(
+                onInput: { [weak self] id, input in self?.read(input, controller: id) },
+                onRemove: { [weak self] id in self?.disconnected(id) },
+                onChange: { [weak self] in self?.updateConnected() }
+            )
+            attach()
+        }
     }
 
     private func disconnected(_ id: String) {
@@ -197,7 +205,8 @@ final class LauncherGamepad: ObservableObject {
     /// physical input profile (an extended gamepad is one, so are the simpler ones).
     private func attach() {
         let pads = GCController.controllers()
-        connected = !pads.isEmpty || !(steam?.snapshots.isEmpty ?? true)
+        hid?.gameControllersChanged(Set(pads.compactMap(\.vendorName)))
+        updateConnected()
         for pad in pads {
             let id = String(UInt(bitPattern: ObjectIdentifier(pad).hashValue), radix: 16)
             let isJC = Self.isJoyCon(category: pad.productCategory, vendorName: pad.vendorName)
@@ -210,6 +219,10 @@ final class LauncherGamepad: ObservableObject {
         pad.physicalInputProfile.valueDidChangeHandler = { profile, _ in
             Self.inputOwner?.read(profile, controller: id, isJoyCon: isJoyCon)
         }
+    }
+
+    private func updateConnected() {
+        connected = !GCController.controllers().isEmpty || hid?.hasPads == true || !(steam?.snapshots.isEmpty ?? true)
     }
 
     private func read(_ pad: GCPhysicalInputProfile, controller: String, isJoyCon: Bool) {
@@ -228,7 +241,7 @@ final class LauncherGamepad: ObservableObject {
         read(raw, controller: controller, isJoyCon: isJoyCon)
     }
 
-    private func read(_ raw: RawPadInput, controller: String, isJoyCon: Bool) {
+    private func read(_ raw: RawPadInput, controller: String, isJoyCon: Bool = false) {
         let eligible = appIsActive() && Self.inputOwner === self
         let generation = inputGeneration
         let split = isJoyCon && joyconSplit()
