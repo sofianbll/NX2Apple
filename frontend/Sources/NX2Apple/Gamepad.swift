@@ -42,6 +42,19 @@ final class LauncherGamepad: ObservableObject {
     /// Sees every press with the controller it came from before it navigates. Returning true consumes it (the Controllers sheet uses
     /// this to give the next press to the player being assigned).
     var capture: ((String, Action) -> Bool)?
+    enum HandlerOwner { case desktop, console, onboarding }
+    private var handlerOwner: HandlerOwner?
+    func install(perform: @escaping (Action) -> Void, capture: ((String, Action) -> Bool)? = nil, owner: HandlerOwner) {
+        handlerOwner = owner
+        self.perform = perform
+        self.capture = capture
+    }
+    /// SwiftUI can show the next view before removing the old one: an old view must not clear the new view's handler.
+    func uninstall(owner: HandlerOwner) {
+        guard handlerOwner == owner else { return }
+        handlerOwner = nil
+        deactivate()
+    }
     /// Whether "Split Joy-Con pair into two controllers" is enabled (#740).
     var joyconSplit: () -> Bool = { UserDefaults.standard.bool(forKey: ControlLayout.joyconSplitKey) }
 

@@ -79,10 +79,10 @@ import NXLauncher
         .environmentObject(padFocus)
         .onAppear {
             padFocus.scope = "onboarding"
-            gamepad.perform = padAction
+            gamepad.install(perform: padAction, owner: .onboarding)
             headingFocused = true
         }
-        .onDisappear { gamepad.deactivate() }
+        .onDisappear { gamepad.uninstall(owner: .onboarding) }
         .onChange(of: state.step) { _ in
             padFocus.focused = nil
             detailsOpen = false

@@ -137,12 +137,15 @@ enum ConsoleInput: Equatable {
         .onChange(of: scope) { _ in editingOption = nil; resetFocus() }
         .onChange(of: state.exited) { exited in if exited, let onExit { onExit() } else { resetFocus() } }
         // the buttons by their printed letters (ConsoleButtons), the swap read at each press so changing it here applies at once
-        .onAppear { gamepad.capture = { [driver] id, action in
-                driver.consumePress(controllerID: id, isBack: ConsoleButtons.input(action, swapAB: driver.state.menuSwapAB) == .back) }
-            gamepad.perform = { [self] action in
-                if let input = ConsoleButtons.input(action, swapAB: driver.state.menuSwapAB) { glyphs = .current(); handle(input) } }
-            resetFocus() }
-        .onDisappear { gamepad.deactivate() }
+        .onAppear {
+            gamepad.install(perform: { [self] action in
+                if let input = ConsoleButtons.input(action, swapAB: driver.state.menuSwapAB) { glyphs = .current(); handle(input) }
+            }, capture: { [driver] id, action in
+                driver.consumePress(controllerID: id, isBack: ConsoleButtons.input(action, swapAB: driver.state.menuSwapAB) == .back)
+            }, owner: .console)
+            resetFocus()
+        }
+        .onDisappear { gamepad.uninstall(owner: .console) }
         .onChange(of: pad.focused) { id in
             if let id, id.hasPrefix("console.game.") { driver.focus(String(id.dropFirst("console.game.".count))) }
             if editingOption != id { editingOption = nil }

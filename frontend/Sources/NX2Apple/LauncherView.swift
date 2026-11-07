@@ -223,10 +223,11 @@ struct LauncherView: View {
         .tint(LauncherPalette.accent)
         .font(.manrope(13))   // the default for text without a font of its own
         .frame(minWidth: 900, idealWidth: 1280, minHeight: 680, idealHeight: 900)
-        .onDisappear { gamepad.deactivate() }
+        .onDisappear { gamepad.uninstall(owner: .desktop) }
         .onAppear {
-            gamepad.perform = padAction
-            gamepad.capture = { [consoleDriver] id, action in consoleDriver.consumePress(controllerID: id, isBack: action == .b) }
+            gamepad.install(perform: padAction, capture: { [consoleDriver] id, action in
+                consoleDriver.consumePress(controllerID: id, isBack: action == .b)
+            }, owner: .desktop)
             if performStartupChecks {
                 library.migrateLaunchOptions(); library.migrateArtwork(); CloudSavesMigration.run()
                 library.syncSharedApp(root: m.shellCachePath)

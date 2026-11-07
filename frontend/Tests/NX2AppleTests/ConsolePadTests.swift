@@ -75,6 +75,27 @@ import NXModel
         for (action, input) in expected { XCTAssertEqual(ConsoleInput(action), input, "\(action)") }
     }
 
+    func testOldViewCannotClearTheNextViewsGamepadHandlerDuringModeChanges() {
+        let gamepad = LauncherGamepad()
+        var received: [String] = []
+        func installDesktop() { gamepad.install(perform: { _ in received.append("desktop") }, owner: .desktop) }
+        func installConsole() { gamepad.install(perform: { _ in received.append("console") }, owner: .console) }
+        for desktopAppearsBeforeConsoleDisappears in [true, false] {
+            received = []
+            installDesktop()
+            installConsole()
+            if desktopAppearsBeforeConsoleDisappears {
+                installDesktop()
+                gamepad.uninstall(owner: .console)
+            } else {
+                gamepad.uninstall(owner: .console)
+                installDesktop()
+            }
+            gamepad.perform(.a)
+            XCTAssertEqual(received, ["desktop"], "desktop input survives both SwiftUI callback orders")
+        }
+    }
+
     /// Hosts the console view and drives it only through `gamepad.perform`, as Gamepad.swift does on a button edge.
     @MainActor func testControllerDrivesConsoleView() {
         let driver = MockConsoleDriver(scenario: .full, animated: false)
