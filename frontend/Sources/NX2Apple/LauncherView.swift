@@ -617,7 +617,10 @@ struct LauncherView: View {
             m.gameDir = game.sourceFolder.isEmpty ? (m.basePath as NSString).deletingLastPathComponent : game.sourceFolder
         }
         m.macAppPath = game.appPath
-        m.outDir = game.outputDirectory
+        let scanDefault = game.inputs[GameLibrary.folderInput] == nil ? (m.basePath as NSString).deletingLastPathComponent : m.gameDir
+        m.outDir = BuildOutput.defaultDirectory(current: game.outputDirectory, scanDefault: scanDefault,
+                                                sourceFolder: m.gameDir, gamesFolder: library.folder,
+                                                remembered: game.outputDirectoryIsRemembered)
         m.done = false; m.doneNote = ""; m.stages = []
         m.target = game.lastTarget
         page = .builds

@@ -154,7 +154,10 @@ change while the game runs applies after a reload, and the sheet says so. Live s
 ## Your games folder
 
 Set **Your games folder** in Settings once. The launcher remembers it, checks it
-on startup, and uses it as the default output location for new builds. **Refresh**
+on startup, and uses it as the default output location for new builds. A game
+whose sources are outside that folder gets the same default for its first build.
+Sources inside the games folder keep their existing output folder, and a remembered
+or manually chosen **Save to** is never changed. **Refresh**
 looks for existing nxnative Mac game apps, including apps in subfolders up to four
 levels deep. It skips game contents, extraction folders and build caches. It does
 not copy or move the games. Several builds of the same title occupy one entry,

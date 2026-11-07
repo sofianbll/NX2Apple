@@ -15,6 +15,8 @@ struct LibraryGame: Codable, Identifiable, Equatable {
     var lastTarget = BuildTarget.ios
     var inputs: [String: [String]] = [:]
     var outputDirectory = ""
+    /// False for a source scan's proposed output, true once a build records the player's Save to.
+    var outputDirectoryIsRemembered = false
     /// The folder this game's files were found in, which is what the Build page shows: the parent of a base package a
     /// level down (a "nsp本体" folder inside the game's folder) still holds the update and DLC, so the scan climbs to
     /// the folder that does. Empty for a library written before it was recorded; the base package's folder is used then.
@@ -84,6 +86,8 @@ extension LibraryGame {
         lastTarget = BuildTarget.normalized(try c.decodeIfPresent(String.self, forKey: .lastTarget))
         inputs = try c.decodeIfPresent([String: [String]].self, forKey: .inputs) ?? [:]
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory) ?? ""
+        outputDirectoryIsRemembered = try c.decodeIfPresent(Bool.self, forKey: .outputDirectoryIsRemembered)
+            ?? (!appPath.isEmpty || !ipaPath.isEmpty || !archivePath.isEmpty || !iosAppPath.isEmpty)
         sourceFolder = try c.decodeIfPresent(String.self, forKey: .sourceFolder) ?? ""
         artworkPath = try c.decodeIfPresent(String.self, forKey: .artworkPath) ?? ""
         artwork = (try? c.decodeIfPresent(GameArtwork.self, forKey: .artwork)) ?? GameArtwork()
@@ -482,6 +486,7 @@ final class GameLibrary: ObservableObject {
         // A game folder is kept as the folder: Build again reads it anew (LauncherView.configureBuild).
         if let folder = model.gameFolder { game.inputs[GameLibrary.folderInput] = [folder.scriptInput] }
         game.outputDirectory = model.outDir
+        game.outputDirectoryIsRemembered = true
         if !model.gameDir.isEmpty { game.sourceFolder = model.gameDir }
         game.lastTarget = model.target
         // An existing output is linked only after validating its metadata and executables.

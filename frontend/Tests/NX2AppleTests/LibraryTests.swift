@@ -630,6 +630,29 @@ import NXModel
         XCTAssertEqual(library.games.map(\.titleID), [titleID])
     }
 
+    func testFirstLibraryBuildOutsideGamesFolderDefaultsToGamesFolder() throws {
+        let gamesFolder = temporary.appendingPathComponent("Games")
+        let sourceFolder = temporary.appendingPathComponent("Sources")
+        let state = temporary.appendingPathComponent("library.json")
+        try JSONSerialization.data(withJSONObject: ["games": [], "folder": gamesFolder.path]).write(to: state)
+        let library = GameLibrary(file: state)
+        let stores = LauncherStores(defaults: testDefaults)
+        let view = LauncherView(stores: stores, library: library, performStartupChecks: false)
+        var game = LibraryGame(titleID: titleID, name: "Hades")
+        game.inputs = ["base": [sourceFolder.appendingPathComponent("Hades [\(titleID)].nsp").path]]
+        game.sourceFolder = sourceFolder.path
+        game.outputDirectory = sourceFolder.path
+
+        view.configureBuild(game)
+
+        XCTAssertEqual(stores.build.outDir, gamesFolder.path)
+
+        game.outputDirectoryIsRemembered = true
+        let restored = try JSONDecoder().decode(LibraryGame.self, from: JSONEncoder().encode(game))
+        view.configureBuild(restored)
+        XCTAssertEqual(stores.build.outDir, sourceFolder.path, "a remembered output wins even when it matches the scan default")
+    }
+
     /// The enumerator hands out resolved paths (/private/var/…); a test's own URLs keep /var/… — compare both the same way.
     private static func canon(_ path: String) -> String {
         path.hasPrefix("/private/var/") ? String(path.dropFirst("/private".count)) : path
