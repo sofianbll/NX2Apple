@@ -517,10 +517,28 @@ final class ArtworkEditorTests: XCTestCase {
     }
 
 
+    @MainActor func testIconHasAnIndependentSquareChoiceWithFocusAndReset() async throws {
+        let editor = try await loaded(slot: .icon)
+        XCTAssertNil(editor.selectedFile, "the icon never follows the hero")
+        XCTAssertEqual(editor.framingBand, CGSize(width: 1, height: 1))
+        XCTAssertEqual(editor.tileAspect, 1)
+        editor.select(editor.tiles[0])
+        editor.setFocus(ArtworkFocus(x: 0.2, y: 0.7))
+        XCTAssertEqual(editor.draft.icon, ArtworkChoice(source: .banner, focus: ArtworkFocus(x: 0.2, y: 0.7)))
+        XCTAssertNil(editor.draft.hero)
+        XCTAssertTrue(editor.save(to: fixture.library))
+        XCTAssertEqual(fixture.game.artwork.icon, editor.draft.icon)
+        editor.reset(.icon)
+        XCTAssertNil(editor.draft.icon)
+    }
+
+
     func testTheCopyIsInEveryLanguageAndFollowsTheRules() {
-        let keys = ["title", "tab.hero", "tab.thumbnail", "banner", "screenshot", "yours", "heroBadge", "lowResBadge", "chooseFile", "dropHint.hero", "dropHint.thumbnail",
-                    "loading", "offline", "retry", "reset.hero", "reset.thumbnail", "cancel", "save", "lowResWarning", "grid.hero", "grid.thumbnail", "framing", "framing.center", "framing.point", "framing.hint", "saveFailed",
-                    ].map { "artwork." + $0 }
+        let keys = ["title", "tab.hero", "tab.thumbnail", "tab.icon", "banner", "screenshot", "yours", "heroBadge", "lowResBadge", "chooseFile",
+                    "dropHint.hero", "dropHint.thumbnail", "dropHint.icon", "loading", "offline", "retry", "reset.hero", "reset.thumbnail", "reset.icon",
+                    "cancel", "save", "lowResWarning", "grid.hero", "grid.thumbnail", "grid.icon", "framing", "framing.center", "framing.point", "framing.hint", "saveFailed",
+                    "icon.apply", "icon.applyHint", "icon.replaces", "error.iconApply", "error.iconChoice", "error.iconRestore", "error.iconRunning", "error.iconRunningMenu",
+                    "error.iconSmall", "error.iconSource"].map { "artwork." + $0 }
         for key in keys {
             let en = L10n.string(key, .en)
             for lang in Lang.all {

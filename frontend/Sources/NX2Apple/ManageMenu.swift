@@ -12,6 +12,7 @@ struct ManageActions {
     var cheats: () -> Void = {}
     var changeArtwork: () -> Void = {}
     var rename: () -> Void = {}
+    var applyIcon: () -> Void = {}
     var reveal: () -> Void = {}
     var showLog: () -> Void = {}
     var removeBuildFiles: () -> Void = {}
@@ -34,7 +35,7 @@ struct ManageItem: Identifiable {
     /// Build again is off while a build runs or with no recorded inputs, Remove while this game is the one building.
     static func list(game: LibraryGame, labels t: (String) -> String, running: Bool, olderTools: Bool, activeBuildID: UUID?,
                      hasBuildFolder: Bool, buildFilesTitle: String? = nil, hasLog: Bool = false, deviceName: String, launching: Bool = false,
-                     actions a: ManageActions) -> [ManageItem] {
+                     gameRunning: Bool = false, iconBusy: Bool = false, actions a: ManageActions) -> [ManageItem] {
         var items = [ManageItem(id: "rebuild", symbol: "arrow.clockwise", title: t(olderTools ? "library.rebuild" : "library.buildAgain"),
                                 enabled: !running && !game.inputs["base", default: []].isEmpty, run: a.rebuild)]
         if game.isReady {
@@ -49,6 +50,10 @@ struct ManageItem: Identifiable {
         items.append(.init(id: "cheats", symbol: "wand.and.stars", title: t("cheats.menu"), run: a.cheats))
         items.append(.init(id: "artwork", symbol: "photo", title: t("library.changeArtwork"), run: a.changeArtwork))
         items.append(.init(id: "rename", symbol: "pencil", title: t("library.rename"), run: a.rename))
+        if game.isReady, !game.appPath.isEmpty, game.artwork.icon != nil {
+            items.append(.init(id: "applyIcon", symbol: "app.badge", title: t("artwork.icon.apply"), enabled: !gameRunning && !iconBusy,
+                               hint: gameRunning ? t("artwork.error.iconRunningMenu") : nil, run: a.applyIcon))
+        }
         if game.revealTarget != nil { items.append(.init(id: "reveal", symbol: "folder", title: t("install.reveal"), run: a.reveal)) }
         if game.isReady {
             items.append(.init(id: "log", symbol: "doc.text.magnifyingglass", title: t("library.showLog"), enabled: hasLog,

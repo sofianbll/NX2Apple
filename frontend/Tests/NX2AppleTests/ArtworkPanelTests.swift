@@ -72,6 +72,13 @@ final class ArtworkPanelTests: XCTestCase {
             await editor.measureSelected()
             editor.setFocus(ArtworkFocus(x: 0.5, y: 0.2))
         }
+        try await capture("artwork-icon", slot: .icon) { editor in
+            editor.hasAppIcon = true
+            await editor.load()
+            editor.select(editor.tiles[3])
+            await editor.measureSelected()
+            editor.setFocus(ArtworkFocus(x: 0.7, y: 0.5))
+        }
 
         fixture.holdMedia = true
         try await capture("artwork-loading")   // the list has not arrived: skeleton tiles

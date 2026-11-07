@@ -262,6 +262,15 @@ screenshots (6 at most): they are indexed for the games asked about and
 downloaded one by one into `artwork/<title ID>/`, only when asked for. Images chosen with an earlier version are
 copied the same way at the next launch.
 
+**Manage > Change artwork > Icon** chooses a separate square icon for the built Mac app,
+with the same import, drop and framing controls as the other slots. The launcher applies
+it after every successful Mac build. For an app already built, save the choice and use
+**Manage > Apply icon**. The square crop must be at least 512 × 512 pixels, and the game
+must not be running. Applying it writes `AppIcon.icns` and `CFBundleIconFile`, signs the
+app ad hoc again and refreshes Launch Services. The panel says when the choice replaces
+the game's own icon. Without a choice, that icon stays untouched. The original icon and
+`Info.plist` are restored if any step fails.
+
 The list can hold several shop products under one title ID: the game, its Nintendo
 Switch 2 Edition, or a bundle with a membership or an expansion pass. The launcher
 takes the game's own product. A product whose name marks an edition, a bundle, a pass

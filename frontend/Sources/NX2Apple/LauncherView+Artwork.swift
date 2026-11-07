@@ -91,4 +91,47 @@ extension LauncherView {
     }
 
     var artworkPadFocus: String? { artworkEditor.flatMap { $0.tiles.first(where: \.isSelected) }.map { "artwork.tile." + $0.id } }
+
+    /// Applies a saved icon choice. Builds call this after their app is registered, and Manage > Apply icon calls it for an existing app.
+    func applyIcon(_ game: LibraryGame) {
+        guard let choice = game.artwork.icon, !game.appPath.isEmpty, !applyingIcon else { return }
+        guard !SaveTransfer.runningOnMac(titleID: game.titleID) else {
+            launchError = String(format: loc.t(MacAppIcon.Failure.running.messageKey), game.name)
+            return
+        }
+        applyingIcon = true
+        Task { @MainActor in
+            defer { applyingIcon = false }
+            do {
+                let source = try await iconSource(choice.source, for: game)
+                let app = URL(fileURLWithPath: game.appPath), titleID = game.titleID, runner = stores.runner
+                try await Task.detached {
+                    try MacAppIcon.apply(app: app, source: source, focusX: choice.focus.x, focusY: choice.focus.y,
+                                         running: { SaveTransfer.runningOnMac(titleID: titleID) },
+                                         render: { try MacAppIconImage.render(source: $0, output: $1, focusX: $2, focusY: $3, runner: runner) }, runner: runner)
+                }.value
+                refreshArtwork()
+            } catch {
+                let failure = (error as? MacAppIcon.Failure) ?? .sourceUnavailable
+                launchError = failure == .running ? String(format: loc.t(failure.messageKey), game.name) : loc.t(failure.messageKey)
+            }
+        }
+    }
+
+    private func iconSource(_ source: ArtworkChoice.Source, for game: LibraryGame) async throws -> URL {
+        switch source {
+        case .banner:
+            if let file = ArtworkStore.cachedBanner(game.titleID, in: artworkStore.directory) { return file }
+            await artworkStore.fetchMissing([game.titleID])
+            guard let file = ArtworkStore.cachedBanner(game.titleID, in: artworkStore.directory) else { throw MacAppIcon.Failure.sourceUnavailable }
+            return file
+        case .screenshot:
+            return try await artworkStore.candidate(source, titleID: game.titleID)
+        case .imported(let name):
+            guard name == URL(fileURLWithPath: name).lastPathComponent, name != ".." else { throw MacAppIcon.Failure.sourceUnavailable }
+            let file = ArtworkStore.customDirectory(for: game.id, in: artworkStore.directory).appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: file.path) else { throw MacAppIcon.Failure.sourceUnavailable }
+            return file
+        }
+    }
 }

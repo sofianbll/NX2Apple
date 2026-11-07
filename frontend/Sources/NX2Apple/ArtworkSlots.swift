@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The two places a game's artwork is used: the library's hero, and the cards and console covers.
+/// The library's hero, the cards and console covers, and the built Mac app's icon.
 enum ArtworkSlot: String, CaseIterable, Codable {
-    case hero, thumbnail
+    case hero, thumbnail, icon
 }
 
 /// Where in the image the crop keeps, 0...1 on each axis (CSS `object-position`). Centred by default.
@@ -69,16 +69,18 @@ struct ArtworkChoice: Codable, Equatable, Hashable {
 struct GameArtwork: Codable, Equatable, Hashable {
     var hero: ArtworkChoice?
     var thumbnail: ArtworkChoice?
+    var icon: ArtworkChoice?
 
-    init(hero: ArtworkChoice? = nil, thumbnail: ArtworkChoice? = nil) {
-        self.hero = hero; self.thumbnail = thumbnail
+    init(hero: ArtworkChoice? = nil, thumbnail: ArtworkChoice? = nil, icon: ArtworkChoice? = nil) {
+        self.hero = hero; self.thumbnail = thumbnail; self.icon = icon
     }
 
-    /// A slot this version cannot read (one a newer version wrote, an `icon` included) is the default, never a library that fails to load.
+    /// A slot or source this version cannot read is the default, never a library that fails to load.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         hero = (try? c.decodeIfPresent(ArtworkChoice.self, forKey: .hero)) ?? nil
         thumbnail = (try? c.decodeIfPresent(ArtworkChoice.self, forKey: .thumbnail)) ?? nil
+        icon = (try? c.decodeIfPresent(ArtworkChoice.self, forKey: .icon)) ?? nil
     }
 
     /// The choice the slot is drawn from: a thumbnail's own, else the hero's.
@@ -86,12 +88,13 @@ struct GameArtwork: Codable, Equatable, Hashable {
         switch slot {
         case .hero: return hero
         case .thumbnail: return thumbnail ?? hero
+        case .icon: return icon
         }
     }
 
     func focus(for slot: ArtworkSlot) -> UnitPoint { (choice(for: slot)?.focus ?? .center).point }
 
     var importedFiles: Set<String> {
-        Set([hero, thumbnail].compactMap { if case .imported(let file)? = $0?.source { return file } else { return nil } })
+        Set([hero, thumbnail, icon].compactMap { if case .imported(let file)? = $0?.source { return file } else { return nil } })
     }
 }

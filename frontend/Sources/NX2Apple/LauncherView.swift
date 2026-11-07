@@ -29,7 +29,9 @@ struct LauncherView: View {
     var activeBuildID: UUID? { recorder.activeBuildID }
     @State var launching = false
     @StateObject private var cloudGate = CloudSaveGate()   // the check of the cloud's save before a start (CloudSaveGate.swift, #957)
-    @State private var launchError: String?
+    @State var applyingIcon = false
+    @State var iconBuildApplied = false
+    @State var launchError: String?
     @State private var removing: LibraryGame?
     @State private var selectingGames = false   // the Build selected games sheet (BuildSelectedSheet.swift)
     @State private var deleting: LibraryGame?   // the game whose Delete sheet is open (DeleteGameSheet.swift)
@@ -279,9 +281,16 @@ struct LauncherView: View {
         .onReceive(engine.$syncing.removeDuplicates().dropFirst()) { syncing in if !syncing && performStartupChecks { checkTools() } }   // a sync made or moved the engine (its HEAD is what ToolsAge compares)
         .onChange(of: library.selectedID) { _ in resignNote = nil }   // the last re-sign's note belongs to its game
         .onChange(of: heroGame?.id) { _ in refreshHeroArtwork() }
+        .onReceive(m.$running.removeDuplicates()) { running in
+            if running { iconBuildApplied = false }
+        }
         .onReceive(recorder.recorded) {   // a build was written into the library (BuildRecorder); a window opened since reads it in onAppear
             refreshArtwork()
             if m.runningTarget != BuildTarget.mac { readSignatures() }
+            if m.runningTarget == BuildTarget.mac, !iconBuildApplied, let game = library.games.first(where: { $0.appPath == m.macAppPath }) {
+                iconBuildApplied = true
+                applyIcon(game)
+            }
             if performStartupChecks { checkTools() }
         }
         .onChange(of: scenePhase) { phase in
@@ -705,9 +714,10 @@ struct LauncherView: View {
                         buildFilesTitle: BuildFiles.menuTitle(stores.buildFiles, game: game.id, t: loc.t),
                         hasLog: GameLog.latest(titleID: game.titleID, appPath: game.appPath) != nil,
                         deviceName: devices.deviceName(game.installedDevice), launching: launching,
+                        gameRunning: SaveTransfer.runningOnMac(titleID: game.titleID), iconBusy: applyingIcon,
                         actions: ManageActions(
                             rebuild: { configureBuild(game) }, openOnDevice: { openOnDevice(game) }, options: { optionsFor = game.id }, saves: { savesFor = game.id }, cheats: { cheatsFor = game.id },
-                            changeArtwork: { openArtwork(game) }, rename: { renaming = game },
+                            changeArtwork: { openArtwork(game) }, rename: { renaming = game }, applyIcon: { applyIcon(game) },
                             reveal: { if let path = game.revealTarget { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) } },
                             showLog: { if let log = GameLog.latest(titleID: game.titleID, appPath: game.appPath) { GameLog.show(log) } },
                             removeBuildFiles: { stores.buildFiles.ask(game.id, building: m.running && activeBuildID == game.id) }, remove: { removing = game }, delete: { deleting = game }))

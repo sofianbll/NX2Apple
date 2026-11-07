@@ -56,6 +56,16 @@ final class ArtworkSlotsTests: XCTestCase {
         XCTAssertEqual(GameArtwork(hero: ArtworkChoice(source: .banner, focus: ArtworkFocus(x: 0, y: 1))).focus(for: .thumbnail), UnitPoint(x: 0, y: 1))   // follows the hero
     }
 
+    func testAnIconHasItsOwnChoiceAndRoundTrips() throws {
+        let icon = ArtworkChoice(source: .imported("icon.jpg"), focus: ArtworkFocus(x: 0.2, y: 0.8))
+        let artwork = GameArtwork(hero: ArtworkChoice(source: .banner), icon: icon)
+        XCTAssertEqual(artwork.choice(for: .icon), icon)
+        XCTAssertEqual(artwork.focus(for: .icon), UnitPoint(x: 0.2, y: 0.8))
+        XCTAssertEqual(artwork.importedFiles, ["icon.jpg"])
+        XCTAssertEqual(try JSONDecoder().decode(GameArtwork.self, from: JSONEncoder().encode(artwork)), artwork)
+        XCTAssertNil(GameArtwork(hero: ArtworkChoice(source: .banner)).choice(for: .icon), "an icon never follows the hero")
+    }
+
 
     private func library(_ game: String, artwork: URL? = nil) throws -> GameLibrary {
         let file = temporary.appendingPathComponent("state/library.json")

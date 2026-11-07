@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// files), Reset, Cancel and Save. The state is `ArtworkEditor`, so this is only the view.
 struct ArtworkPanel: View {
     static let width: CGFloat = 420
-    private static let slots: [ArtworkSlot] = [.hero, .thumbnail]
+    private static let slots: [ArtworkSlot] = ArtworkSlot.allCases
 
     @ObservedObject var editor: ArtworkEditor
     let labels: (String) -> String
@@ -34,6 +34,12 @@ struct ArtworkPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     grid
+                    if editor.slot == .icon {
+                        Text(t("artwork.icon.applyHint")).font(.manrope(12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if editor.replacesAppIcon {
+                            Text(t("artwork.icon.replaces")).font(.manrope(12)).foregroundStyle(LauncherPalette.building).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     if editor.isLoading { Text(t("artwork.loading")).font(.manrope(12)).foregroundStyle(LauncherPalette.secondaryText) }
                     if editor.loadState == .offline { offline }
                     if let notice = editor.notice { noticeRow(notice) }

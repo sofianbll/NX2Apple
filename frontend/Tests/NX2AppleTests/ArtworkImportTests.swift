@@ -94,6 +94,14 @@ final class ArtworkImportTests: XCTestCase {
         XCTAssertFalse(try ArtworkImport.prepare(image("edge.jpg", width: 640, height: 360), kind: .thumbnail, into: folder).lowResolution)
     }
 
+    func testAnIconImportKeepsAUsableSquareCropAndMarksASmallOne() throws {
+        let panorama = try ArtworkImport.prepare(image("panorama.jpg", width: 6000, height: 750), kind: .icon, into: folder)
+        XCTAssertEqual(panorama.pixelSize, CGSize(width: 4096, height: 512))
+        XCTAssertFalse(panorama.lowResolution)
+        let small = try ArtworkImport.prepare(image("short-icon.jpg", width: 1000, height: 400), kind: .icon, into: folder)
+        XCTAssertTrue(small.lowResolution, "the short side, not the width, decides whether the square crop is small")
+    }
+
     func testTheOrientationIsAppliedToThePixels() throws {
         // Orientation 6: stored 100 × 50, shown 50 × 100 and turned a quarter to the right.
         let prepared = try ArtworkImport.prepare(image("turned.jpg", width: 100, height: 50, orientation: 6), kind: .hero, into: folder)

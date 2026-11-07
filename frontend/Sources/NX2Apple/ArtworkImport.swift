@@ -8,12 +8,13 @@ import UniformTypeIdentifiers
 /// Pure and safe to call from any thread.
 enum ArtworkImport {
     enum Kind {
-        case hero, thumbnail
+        case hero, thumbnail, icon
 
         var maxWidth: Int {
             switch self {
             case .hero: return 3840
             case .thumbnail: return 1920
+            case .icon: return 4096
             }
         }
         /// Narrower than this is drawn soft: worth a warning, never a refusal.
@@ -21,6 +22,7 @@ enum ArtworkImport {
             switch self {
             case .hero: return 1920
             case .thumbnail: return 640
+            case .icon: return 512
             }
         }
     }
@@ -60,8 +62,9 @@ enum ArtworkImport {
         let turned = (5...8).contains(properties[kCGImagePropertyOrientation] as? Int ?? 1)
         let width = Double(turned ? rawHeight : rawWidth), height = Double(turned ? rawWidth : rawHeight)
 
-        // ImageIO limits the longer side.
-        let scale = min(1, Double(kind.maxWidth) / width)
+        // ImageIO limits the width. An icon keeps enough height for its 512 px square crop even on a very wide panorama.
+        let limit = kind == .icon ? max(Double(kind.maxWidth), 512 * width / min(width, height)) : Double(kind.maxWidth)
+        let scale = min(1, limit / width)
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -71,7 +74,8 @@ enum ArtworkImport {
               CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { throw Failure.unreadable }   // a cut-off file decodes in part
 
         let image = try stored(decoded)
-        let lowResolution = image.width < kind.lowResolutionWidth
+        let measuredWidth = kind == .icon ? min(image.width, image.height) : image.width
+        let lowResolution = measuredWidth < kind.lowResolutionWidth
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else { throw Failure.unreadable }
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)

@@ -33,9 +33,11 @@ final class ManageMenuTests: IsolatedDefaultsTestCase {
     }
 
     private func items(_ game: LibraryGame, running: Bool = false, older: Bool = false, active: UUID? = nil, folder: Bool = false, log: Bool = false,
-                       launching: Bool = false, buildFiles: String? = nil, actions: ManageActions = ManageActions()) -> [ManageItem] {
+                       launching: Bool = false, buildFiles: String? = nil, gameRunning: Bool = false, iconBusy: Bool = false,
+                       actions: ManageActions = ManageActions()) -> [ManageItem] {
         ManageItem.list(game: game, labels: { L10n.string($0, .en) }, running: running, olderTools: older, activeBuildID: active,
-                        hasBuildFolder: folder, buildFilesTitle: buildFiles, hasLog: log, deviceName: "iPad mini", launching: launching, actions: actions)
+                        hasBuildFolder: folder, buildFilesTitle: buildFiles, hasLog: log, deviceName: "iPad mini", launching: launching,
+                        gameRunning: gameRunning, iconBusy: iconBusy, actions: actions)
     }
 
     /// #232: Remove build files, with the size, only for a game with a build folder, never while that game builds.
@@ -164,6 +166,24 @@ final class ManageMenuTests: IsolatedDefaultsTestCase {
         XCTAssertEqual(log, ["panel"], "the row opens the panel: it no longer asks for a file")
         XCTAssertEqual(list.first { $0.id == "artwork" }?.title, L10n.string("library.changeArtwork", .en))
         XCTAssertNil(list.first { $0.id == "resetArtwork" }, "each slot resets in the panel: the menu has no reset row")
+    }
+
+    func testApplyIconNeedsABuiltMacAppAndAChoiceAndIsOffWhileTheGameRuns() throws {
+        var game = try readyGame()
+        XCTAssertNil(items(game).first { $0.id == "applyIcon" })
+        game.artwork.icon = ArtworkChoice(source: .banner)
+        var applied = 0
+        let row = try XCTUnwrap(items(game, actions: ManageActions(applyIcon: { applied += 1 })).first { $0.id == "applyIcon" })
+        XCTAssertEqual(row.title, L10n.string("artwork.icon.apply", .en))
+        XCTAssertTrue(row.enabled)
+        row.run()
+        XCTAssertEqual(applied, 1)
+        let running = try XCTUnwrap(items(game, gameRunning: true).first { $0.id == "applyIcon" })
+        XCTAssertFalse(running.enabled)
+        XCTAssertEqual(running.hint, L10n.string("artwork.error.iconRunningMenu", .en))
+        XCTAssertFalse(try XCTUnwrap(items(game, iconBusy: true).first { $0.id == "applyIcon" }).enabled)
+        game.appPath = ""
+        XCTAssertNil(items(game).first { $0.id == "applyIcon" }, "the shared iPhone app is never modified")
     }
 
     func testTheControllerLandsOnTheFirstUsableRow() throws {
