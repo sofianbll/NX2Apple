@@ -11,11 +11,12 @@ import NXLauncher
     let controls = ControlLayout()
     /// Records the builds in the library whichever view is up: console mode takes LauncherView down while a build runs on.
     let recorder: BuildRecorder
+    let gamepad = LauncherGamepad()
     lazy var console: LiveConsoleDriver = {
         let driver = LiveConsoleDriver(library: library, controls: controls, repo: { [stores] in stores.repo.path }, lang: { [stores] in stores.localizer.lang },
                                        labels: { [stores] in stores.localizer.t($0) }, player: { [stores] in stores.players.active },
                                        saves: { [stores] in (stores.saveSettings.global, stores.saveSettings.game($0)) },
-                                       sticks: { [stores] in stores.sticks.settings })
+                                       sticks: { [stores] in stores.sticks.settings }, gamepad: gamepad)
         driver.bindActivity(stores.build)   // the top bar's chip shows the desktop's build (#1004)
         driver.bindBuilds(stores.build, queue: stores.queue)   // the Builds page (#816)
         return driver
@@ -36,7 +37,6 @@ struct RootView: View {
     private var library: GameLibrary { shared.library }
     @State private var mode: Mode = .checking
     @State private var driver: LiveOnboardingDriver?
-    @StateObject private var gamepad = LauncherGamepad()
     @ObservedObject var console: ConsoleCoordinator
 
     var body: some View {
@@ -45,19 +45,21 @@ struct RootView: View {
             case .checking:
                 LauncherPalette.background.overlay(ProgressView().controlSize(.small))
             case .onboarding:
-                if let driver { OnboardingView(driver: driver, lang: stores.localizer.lang, gamepad: gamepad) }
+                if let driver { OnboardingView(driver: driver, lang: stores.localizer.lang, gamepad: shared.gamepad) }
             case .launcher:
                 ZStack {
                     if console.active {
                         ConsoleInLanguage(localizer: stores.localizer) { lang in
-                            ConsoleView(driver: shared.console, lang: lang, onExit: { console.exit(); shared.console.returnFromGame() },
+                            ConsoleView(driver: shared.console, lang: lang, gamepad: shared.gamepad,
+                                        onExit: { console.exit(); shared.console.returnFromGame() },
                                         chooseLanguage: { code in stores.localizer.choose(code); shared.console.refresh() })
                         }
                             .onAppear { shared.console.reloadCovers() }
                             .transition(CalmTransition.console)
                     } else {
                         LauncherView(stores: stores, library: library, onRunSetup: runSetupAgain, enterConsole: { console.enter() },
-                                    controllerDriver: AnyConsoleDriver(shared.console), controls: shared.controls, recorder: shared.recorder)
+                                    controllerDriver: AnyConsoleDriver(shared.console), controls: shared.controls, recorder: shared.recorder,
+                                    gamepad: shared.gamepad)
                             .transition(CalmTransition.desktop)
                     }
                 }

@@ -18,6 +18,23 @@ extension LauncherGamepad {
         report3F ? [2, 1, 4, 3, 11, 12, 5, 6, 7, 8, 10, 9] : [2, 1, 5, 4, 14, 15, 7, 8, 9, 10, 12, 11]
     }
 
+    /// Pro Controller subcommand 0x30 after neutral rumble data, as nxnative's pad_hid_lights.
+    static func hidPlayerLights(player: Int) -> [UInt8] {
+        let neutral: [UInt8] = [0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]
+        let lights: [UInt8] = [0x1, 0x3, 0x7, 0xF, 0x9, 0x5, 0xD, 0x6]
+        var report = [UInt8](repeating: 0, count: 49)
+        report[0] = 0x01
+        report.replaceSubrange(2..<10, with: neutral)
+        report[10] = 0x30
+        report[11] = lights[(player - 1) & 7]
+        return report
+    }
+
+    static func hidSnapshot(id: String, name: String, report3F: Bool, player: Int?, lightsWork: Bool) -> ConsolePadSnapshot {
+        ConsolePadSnapshot(id: id, name: name, category: report3F ? "Nintendo Switch Pro Controller" : nil,
+                           playerIndex: player, battery: nil, charging: false, canIdentify: report3F && lightsWork)
+    }
+
     static func normalizeHIDAxis(_ value: Int, min: Int, max: Int) -> Float {
         max > min ? Float(2.0 * Double(value - min) / Double(max - min) - 1) : 0
     }
@@ -83,11 +100,13 @@ extension LauncherGamepad {
     }
 }
 
-private final class LauncherHIDDevice {
+final class LauncherHIDDevice {
     let device: IOHIDDevice, id: String, name: String, vendorID: Int, gcHint: Bool
     var state: LauncherGamepad.HIDState
     var waiting: DispatchWorkItem?
     var active = false
+    var player: Int?
+    var lightsWork = false
     let onInput: (String, LauncherGamepad.RawPadInput) -> Void
 
     init(device: IOHIDDevice, id: String, name: String, vendorID: Int, gcHint: Bool,
@@ -109,6 +128,39 @@ private final class LauncherHIDDevice {
             onInput(id, state.input)
         }
     }
+
+    var consoleDevice: ConsolePadDevice {
+        ConsolePadDevice(id: id, snapshot: {
+            LauncherGamepad.hidSnapshot(id: self.id, name: self.name, report3F: self.state.report3F,
+                                        player: self.player, lightsWork: self.lightsWork)
+        }, battery: nil,
+        setPlayer: { self.player = $0 },
+        showPlayer: { self.player = $0; self.writeLights($0) },
+        identify: { _ in await self.identify() })
+    }
+
+    @discardableResult
+    private func writeLights(_ player: Int) -> Bool {
+        guard active, state.report3F, (1...4).contains(player) else { return false }
+        let report = LauncherGamepad.hidPlayerLights(player: player)
+        let result: IOReturn = report.withUnsafeBytes {
+            guard let bytes = $0.bindMemory(to: UInt8.self).baseAddress else { return kIOReturnError }
+            return IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0x01, bytes, CFIndex(report.count))
+        }
+        lightsWork = result == kIOReturnSuccess
+        if !lightsWork { LauncherHIDManager.log.error("Cannot set HID gamepad player lights \(self.name, privacy: .public) (\(result))") }
+        return lightsWork
+    }
+
+    private func identify() async {
+        guard lightsWork else { return }
+        for step in 0..<8 {
+            guard !Task.isCancelled else { break }
+            writeLights(step % 4 + 1)
+            try? await Task.sleep(nanoseconds: 140_000_000)
+        }
+        if let player { writeLights(player) }
+    }
 }
 
 /// Raw HID pads enter LauncherGamepad's existing RawPadInput pipeline, on the same run loop as GameController.
@@ -120,9 +172,12 @@ final class LauncherHIDManager {
     private let onInput: (String, LauncherGamepad.RawPadInput) -> Void
     private let onRemove: (String) -> Void
     private let onChange: () -> Void
-    private static let log = Logger(subsystem: "NX2Apple", category: "console.controllers")
+    static let log = Logger(subsystem: "NX2Apple", category: "console.controllers")
 
     var hasPads: Bool { devices.values.contains(where: { $0.active }) }
+    var consolePadDevices: [ConsolePadDevice] {
+        devices.values.filter(\.active).sorted { $0.id < $1.id }.map(\.consoleDevice)
+    }
 
     init(onInput: @escaping (String, LauncherGamepad.RawPadInput) -> Void,
          onRemove: @escaping (String) -> Void, onChange: @escaping () -> Void) {
@@ -257,5 +312,6 @@ final class LauncherHIDManager {
         IOHIDDeviceUnscheduleFromRunLoop(device.device, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         IOHIDDeviceClose(device.device, IOOptionBits(kIOHIDOptionsTypeNone))
         device.active = false
+        device.player = nil
     }
 }

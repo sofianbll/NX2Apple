@@ -15,6 +15,8 @@ final class LauncherGamepad: ObservableObject {
     enum Action: Equatable { case left, right, up, down, a, b, x, y, l, r, plus, select }
 
     @Published private(set) var connected = false
+    @Published private(set) var hidRevision = 0
+    var consolePadDevices: [ConsolePadDevice] { hid?.consolePadDevices ?? [] }
     /// `select` is the Select-type button (DualShock Share, DualSense Create, Xbox View, Nintendo Minus): GameController's
     /// `buttonOptions`. The system does not claim it, so it always reaches the app. The desktop launcher opens console mode with it.
     private static weak var inputOwner: LauncherGamepad?
@@ -180,7 +182,10 @@ final class LauncherGamepad: ObservableObject {
             hid = LauncherHIDManager(
                 onInput: { [weak self] id, input in self?.read(input, controller: id) },
                 onRemove: { [weak self] id in self?.disconnected(id) },
-                onChange: { [weak self] in self?.updateConnected() }
+                onChange: { [weak self] in
+                    self?.hidRevision += 1
+                    self?.updateConnected()
+                }
             )
             attach()
         }

@@ -11,24 +11,12 @@ extension LiveConsoleDriver {
         guard let c = state.controllers.first(where: { $0.id == controllerID }) else { return }
         state.identifyingControllerID = controllerID
         showToast(String(format: t("console.identifyingName"), c.name), kind: "controller")
-        guard identifyRunning != controllerID, let pad = devices[controllerID] else { return }
-        let actions = Self.identifyActions(pad)
-        Self.log.debug("identify \(c.name, privacy: .public): \(actions.map { "\($0)" }.joined(separator: ","), privacy: .public)")
+        guard identifyRunning != controllerID, let device = devices[controllerID] else { return }
         identifyTask?.cancel()
         if let previous = identifyRunning { stopRumble(previous) }
         identifyRunning = controllerID
         identifyTask = Task { [weak self] in
-            let player = pad.playerIndex
-            let color = pad.light?.color
-            if actions.contains(.rumble) { self?.rumble(pad, id: controllerID) }
-            for step in 0..<8 {
-                guard !Task.isCancelled else { break }
-                if actions.contains(.playerLights) { pad.playerIndex = GCControllerPlayerIndex(rawValue: step % 4) ?? .indexUnset }
-                if actions.contains(.lightBar) { pad.light?.color = step % 2 == 0 ? GCColor(red: 1, green: 0.1, blue: 0.9) : GCColor(red: 0.1, green: 0.9, blue: 1) }
-                try? await Task.sleep(nanoseconds: 140_000_000)
-            }
-            pad.playerIndex = player
-            if let color { pad.light?.color = color }
+            await device.identify(controllerID)
             if self?.identifyRunning == controllerID { self?.identifyRunning = nil }
         }
     }

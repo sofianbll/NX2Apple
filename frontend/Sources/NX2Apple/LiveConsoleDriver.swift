@@ -89,8 +89,9 @@ struct ConsolePadSnapshot: Equatable {
     private var toastTask: Task<Void, Never>?
     private var notices = ConsoleNoticeQueue()
     private var clock: Timer?
-    /// Real controllers by id, for Identify and player assignment.
-    var devices: [String: GCController] = [:]
+    /// Real controllers by id, for Identify and player assignment, whatever their input source.
+    var devices: [String: ConsolePadDevice] = [:]
+    private let hidGamepad: LauncherGamepad?
     /// #816 and #952 (LiveConsoleDriver+Sessions.swift): the play history, the game running now (paused, stopped, quit before another)
     /// and the games built with older tools than the engine has.
     let sessions: PlaySessionStore
@@ -103,13 +104,15 @@ struct ConsolePadSnapshot: Equatable {
          artwork: ((LibraryGame, String) -> NSImage?)? = nil, startingTimeout: TimeInterval = 20, observeSystem: Bool = true, playerOutput: ((String, Int) -> Void)? = nil,
          player: @escaping () -> PlayerProfile? = { nil },
          saves: @escaping (String) -> (global: SaveGlobalSettings, game: SaveGameOverride)? = { _ in nil },
-         sticks: @escaping () -> StickDeadzoneSettings? = { nil }) {
+         sticks: @escaping () -> StickDeadzoneSettings? = { nil },
+         gamepad: LauncherGamepad? = nil) {
         sessions = PlaySessionStore(file: observeSystem ? PlaySessionStore.defaultFile : nil)   // a test keeps its history in memory
         tracking.observesSystem = observeSystem
         self.saves = saves
         self.sticks = sticks
         self.sendPlayerOutput = playerOutput
         self.player = player
+        self.hidGamepad = gamepad
         self.library = library; self.controls = controls; self.repo = repo; self.lang = lang; self.labels = labels
         self.startingTimeout = startingTimeout
         self.pads = pads ?? { [] }
@@ -134,6 +137,7 @@ struct ConsolePadSnapshot: Equatable {
         }.store(in: &cancellables)
         watchCloudGate()
         watchTools()
+        hidGamepad?.$hidRevision.dropFirst().sink { [weak self] _ in self?.refreshControllers(announce: false) }.store(in: &cancellables)
         refresh()
         refreshControllers(announce: false)
         refreshPadLayout()
@@ -439,7 +443,7 @@ struct ConsolePadSnapshot: Equatable {
         state.assigningPlayer = nil; state.assigningControllerID = nil
         assignTimeout?.cancel()
         for (id, value) in overrides where !id.hasSuffix(".R") {
-            devices[id]?.playerIndex = value == 0 ? .indexUnset : (GCControllerPlayerIndex(rawValue: value - 1) ?? .indexUnset)
+            devices[id]?.setPlayer(value == 0 ? nil : value)
         }
         refreshControllers(announce: false)
         showToast(String(format: t("console.assignedTo"), pad.name, player), kind: "controller")
@@ -483,7 +487,7 @@ struct ConsolePadSnapshot: Equatable {
     }
 
     /// What this controller can do for Identify. The player lights have no capability flag in GameController, so any gamepad counts.
-    static func identifyActions(_ c: GCController) -> [IdentifyPlan.Action] {
+    nonisolated static func identifyActions(_ c: GCController) -> [IdentifyPlan.Action] {
         IdentifyPlan.actions(playerLights: c.extendedGamepad != nil, lightBar: c.light != nil, rumble: c.haptics != nil)
     }
 
@@ -494,6 +498,22 @@ struct ConsolePadSnapshot: Equatable {
     var rumbleStops: [String: Task<Void, Never>] = [:]
     var identifyRunning: String?   // the controller whose Identify is going: a second press only shows the toast again, so the player and the light it restores are the real ones
     static let rumbleSeconds = 0.9
+
+    private func identifyGC(_ pad: GCController, id: String) async {
+        let actions = Self.identifyActions(pad)
+        Self.log.debug("identify \(pad.vendorName ?? pad.productCategory, privacy: .public): \(actions.map { "\($0)" }.joined(separator: ","), privacy: .public)")
+        let player = pad.playerIndex
+        let color = pad.light?.color
+        if actions.contains(.rumble) { rumble(pad, id: id) }
+        for step in 0..<8 {
+            guard !Task.isCancelled else { break }
+            if actions.contains(.playerLights) { pad.playerIndex = GCControllerPlayerIndex(rawValue: step % 4) ?? .indexUnset }
+            if actions.contains(.lightBar) { pad.light?.color = step % 2 == 0 ? GCColor(red: 1, green: 0.1, blue: 0.9) : GCColor(red: 0.1, green: 0.9, blue: 1) }
+            try? await Task.sleep(nanoseconds: 140_000_000)
+        }
+        pad.playerIndex = player
+        if let color { pad.light?.color = color }
+    }
 
     /// macOS offers apps no way to drop a Bluetooth controller, so this says where to do it instead.
     func disconnect(controllerID: String) { showToast(t("console.disconnectHint"), kind: "controller") }
@@ -527,7 +547,7 @@ struct ConsolePadSnapshot: Equatable {
     var sendPlayerOutput: ((String, Int) -> Void)?
 
     /// A calm colour per player for the light bar: blue, red, green, amber.
-    static func playerLightColor(_ player: Int) -> (red: Float, green: Float, blue: Float) {
+    nonisolated static func playerLightColor(_ player: Int) -> (red: Float, green: Float, blue: Float) {
         switch player {
         case 1: return (0.25, 0.55, 1.0)
         case 2: return (1.0, 0.35, 0.35)
@@ -549,16 +569,11 @@ struct ConsolePadSnapshot: Equatable {
                 if !pad.id.hasSuffix(".R") { sent = true; sendPlayerOutput(pad.id, player) }
                 continue
             }
-            // A split Joy-Con pair shares one underlying GCController instance between `.L` and `.R`. Writing `.R`'s playerIndex back to
-            // that shared instance overwrites `.L`'s hardware playerIndex and causes P1/P2 to ping-pong on every reread (#740).
+            // A split Joy-Con pair shares one underlying device between `.L` and `.R`: never overwrite the left player with the right one (#740).
             guard let device = devices[pad.id], !pad.id.hasSuffix(".R") else { continue }
             sent = true
-            device.playerIndex = GCControllerPlayerIndex(rawValue: player - 1) ?? .indexUnset
-            if let light = device.light {
-                let c = Self.playerLightColor(player)
-                light.color = GCColor(red: c.red, green: c.green, blue: c.blue)
-            }
-            Self.hidLog.debug("player output to \(pad.name, privacy: .public): player \(player), light bar \(device.light != nil)")
+            device.showPlayer(player)
+            Self.hidLog.debug("player output to \(pad.name, privacy: .public): player \(player)")
         }
         if sent {
             primeTask?.cancel()
@@ -657,19 +672,17 @@ struct ConsolePadSnapshot: Equatable {
             devices = [:]
             var all = GCController.controllers().filter { $0 !== excluding }
             if let including, !all.contains(where: { $0 === including }) { all.append(including) }
-            snapshots = all.compactMap { c in   // every controller, whatever its vendor or profile, read fresh from its own instance
+            snapshots = all.map { c in   // every controller, whatever its vendor or profile, read fresh from its own instance
                 let id = String(UInt(bitPattern: ObjectIdentifier(c).hashValue), radix: 16)
-                devices[id] = c
-                if let battery = c.battery { watchBattery(id: id, object: battery) }
-                let reading = c.battery.map { b -> (level: Double?, charging: Bool) in
-                    let state: PadBatteryState = b.batteryState == .charging ? .charging : b.batteryState == .full ? .full : b.batteryState == .discharging ? .discharging : .unknown
-                    return ConsolePadSnapshot.batteryReading(level: Double(b.batteryLevel), state: state)
-                }
-                let index = c.playerIndex.rawValue
+                let device = ConsolePadDevice.gameController(c, id: id, identify: { [weak self] pad, id in await self?.identifyGC(pad, id: id) })
+                devices[id] = device
+                if let battery = device.battery { watchBattery(id: id, object: battery) }
                 Self.hidLog.debug("battery read \(id, privacy: .public) \(c.vendorName ?? c.productCategory, privacy: .public): object \(c.battery != nil), level \(c.battery.map { Double($0.batteryLevel) } ?? -1), state \(c.battery.map { "\($0.batteryState.rawValue)" } ?? "none", privacy: .public)")
-                return ConsolePadSnapshot(id: id, name: c.vendorName ?? c.productCategory, category: c.productCategory,
-                                          playerIndex: (0...3).contains(index) ? index + 1 : nil, battery: reading?.level,
-                                          charging: reading?.charging ?? false, canIdentify: !Self.identifyActions(c).isEmpty)
+                return device.snapshot()
+            }
+            for device in hidGamepad?.consolePadDevices ?? [] {
+                devices[device.id] = device
+                snapshots.append(device.snapshot())
             }
         }
         snapshots += steamPads()
@@ -691,11 +704,15 @@ struct ConsolePadSnapshot: Equatable {
         }
         let assigned = Self.autoAssigned(snapshots, remembered: remembered)
         for (old, new) in zip(snapshots, assigned) where old.playerIndex != new.playerIndex && !new.id.hasSuffix(".R") {
-            devices[new.id]?.playerIndex = GCControllerPlayerIndex(rawValue: (new.playerIndex ?? 1) - 1) ?? .indexUnset
+            devices[new.id]?.setPlayer(new.playerIndex)
         }
         for pad in assigned { if let p = pad.playerIndex { remembered[Self.memoryKey(pad)] = p } }
         primeOutputs(assigned)
-        let list = assigned.map(\.controller)
+        let list = assigned.map { pad in
+            guard var fresh = devices[pad.id]?.snapshot() else { return pad.controller }
+            fresh.playerIndex = pad.playerIndex
+            return fresh.controller
+        }
         if list != state.controllers {
             Self.hidLog.debug("publish \(list.count) controllers at \(self.stamp(), privacy: .public): \(list.map { "\($0.name)" }.joined(separator: ", "), privacy: .public)")
             state.controllers = list

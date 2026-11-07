@@ -216,6 +216,10 @@ navigation use GameController, plus raw HID for other pads that GameController c
 but has not listed after two seconds. Xbox, PlayStation and Nintendo pads always stay
 with GameController. Pro Controller clones whose buttons arrive in report `0x3F` use
 that report's numbering, and a pad returns to GameController if it appears later.
+Admitted HID pads appear in the Controllers sheet and take players 1 to 4 there.
+Assignments last for the launcher session, as GameController assignments do. Report
+`0x3F` pads show their player on their lights when output reports work, which also
+enables Identify.
 
 macOS may require **System Settings → Privacy & Security → Input Monitoring**
 permission for the game app's direct Steam input. Bluetooth pairing alone does not

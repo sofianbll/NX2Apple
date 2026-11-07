@@ -33,6 +33,33 @@ final class GamepadHIDTests: XCTestCase {
         XCTAssertFalse(eightBitDo.input.plus)
     }
 
+    func testPlayerLightsUseTheProControllerOutputReport() {
+        let neutral: [UInt8] = [0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]
+        for (player, mask) in [(1, UInt8(0x1)), (2, 0x3), (3, 0x7), (4, 0xF)] {
+            let report = LauncherGamepad.hidPlayerLights(player: player)
+            XCTAssertEqual(report.count, 49)
+            XCTAssertEqual(report[0], 0x01)
+            XCTAssertEqual(Array(report[2..<10]), neutral)
+            XCTAssertEqual(report[10], 0x30)
+            XCTAssertEqual(report[11], mask)
+            XCTAssertTrue(report[12...].allSatisfy { $0 == 0 })
+        }
+    }
+
+    func testHIDSnapshotIsAFullSizePadWithoutBatteryAndRequiresWorkingLightsForIdentify() {
+        let pro = LauncherGamepad.hidSnapshot(id: "hid-1", name: "Lic Pro Controller", report3F: true, player: 2, lightsWork: true).controller
+        XCTAssertEqual(pro.name, "Lic Pro Controller")
+        XCTAssertEqual(pro.kind, .fullSize)
+        XCTAssertEqual(pro.player, 2)
+        XCTAssertNil(pro.battery)
+        XCTAssertTrue(pro.canIdentify)
+        XCTAssertFalse(LauncherGamepad.hidSnapshot(id: "hid-1", name: "Lic Pro Controller", report3F: true, player: 2, lightsWork: false).canIdentify)
+        let generic = LauncherGamepad.hidSnapshot(id: "hid-2", name: "Generic", report3F: false, player: nil, lightsWork: false).controller
+        XCTAssertEqual(generic.kind, .gamepad)
+        XCTAssertNil(generic.battery)
+        XCTAssertFalse(generic.canIdentify)
+    }
+
     func testHatBecomesAllEightDPadDirectionsAndCentersOutsideItsRange() {
         let expected: [(Float, Float)] = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)]
         for (hat, want) in expected.enumerated() {
