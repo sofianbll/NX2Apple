@@ -65,6 +65,52 @@
         }
       }
     },
+    "1.5×": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1,5×"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1.5×"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1,5×"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1,5×"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1.5倍"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1,5×"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1.5×"
+          }
+        }
+      }
+    },
     "120 fps": {
       "localizations": {
         "de": {
@@ -189,6 +235,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "16:9（Switch）"
+          }
+        }
+      }
+    },
+    "1×": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1× (Original)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1×"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1× (taille d’origine)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1× (originale)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1×（元の解像度）"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1× (ursprunglig)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1×"
+          }
+        }
+      }
+    },
+    "2×": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2× (doppelt)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2×"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2× (double taille)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2× (doppia)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2×（2倍）"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2× (dubbel)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2×"
           }
         }
       }
@@ -1085,6 +1223,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "排列…"
+          }
+        }
+      }
+    },
+    "At a render resolution above 1×, a game that upscales its own picture gets it resolved from the larger render instead: sharper. Game's own keeps its upscaler.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bei einer Renderauflösung über 1× wird das hochskalierte Bild eines Spiels aus dem größeren Rendering erzeugt: schärfer. Vom Spiel behält den ursprünglichen Upscaler bei."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At a render resolution above 1×, a game that upscales its own picture gets it resolved from the larger render instead: sharper. Game's own keeps its upscaler."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À une résolution de rendu supérieure à 1×, le suréchantillonnage d’un jeu est calculé depuis l’image agrandie : plus net. Celui du jeu conserve son upscaler."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oltre 1×, l’upscaling del gioco viene calcolato dal rendering più grande: più nitido. Quello del gioco mantiene il suo upscaler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レンダリング解像度が 1× を超える場合、ゲーム独自のアップスケーリング結果を大きなレンダリングから生成し、鮮明にします。「ゲーム標準」ではゲームのアップスケーラーを使用します。"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vid högre renderingsupplösning än 1× skapas spelets uppskalade bild från den större renderingen: skarpare. Spelets egen behåller dess uppskalare."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染分辨率高于 1× 时，游戏自带的超分改为从更大的渲染画面生成：更清晰。“游戏自带”保留其超分。"
           }
         }
       }
@@ -12993,6 +13177,52 @@
         }
       }
     },
+    "Render resolution": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderauflösung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Render resolution"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résolution de rendu"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Risoluzione di rendering"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レンダリング解像度"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderingsupplösning"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染分辨率"
+          }
+        }
+      }
+    },
     "Render scale": {
       "localizations": {
         "de": {
@@ -13117,6 +13347,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "渲染的像素约多四分之一：稍慢，发热稍多。"
+          }
+        }
+      }
+    },
+    "Renders the game's 3D at that multiple of its size: sharper, and more GPU time and memory.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rendert die 3D-Grafik des Spiels mit diesem Vielfachen ihrer Größe: schärfer, aber mehr GPU-Zeit und Speicher."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renders the game's 3D at that multiple of its size: sharper, and more GPU time and memory."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rend la 3D du jeu à ce multiple de sa taille : une image plus nette, mais davantage de temps GPU et de mémoire."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esegue il rendering 3D del gioco a questo multiplo delle sue dimensioni: più nitido, con più tempo GPU e memoria."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームの 3D を元のサイズの選択した倍率でレンダリングします。鮮明になりますが、GPU 時間とメモリ使用量が増えます。"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renderar spelets 3D i vald multipel av dess storlek: skarpare, men mer GPU-tid och minne."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以游戏画面尺寸的该倍数渲染 3D 画面：更清晰，但占用更多 GPU 时间和内存。"
           }
         }
       }
@@ -13373,6 +13649,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "恢复测试默认值"
+          }
+        }
+      }
+    },
+    "Resolved by the app": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Von der App berechnet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolved by the app"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résolu par l’app"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calcolato dall’app"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリで生成"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beräknad av appen"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由应用处理"
           }
         }
       }
@@ -16765,6 +17087,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "更新 App"
+          }
+        }
+      }
+    },
+    "Upscaler at 1.5× / 2×": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaler bei 1,5× / 2×"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaler at 1.5× / 2×"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaler à 1,5× / 2×"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaler a 1,5× / 2×"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1.5× / 2× 時のアップスケーラー"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uppskalare vid 1,5× / 2×"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1.5× / 2× 时的超分"
           }
         }
       }

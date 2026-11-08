@@ -1,8 +1,12 @@
+1.5×
 120 fps
 16:9 (Switch)
+1×
+2×
 30 fps
 60 fps
 American English
+At a render resolution above 1×, a game that upscales its own picture gets it resolved from the larger render instead: sharper. Game's own keeps its upscaler.
 Brazilian Portuguese
 British English
 Canadian French
@@ -54,8 +58,11 @@ Pipeline prebuild
 Plays Joy-Con 2 and Pro Controller 2 over Bluetooth: hold Sync on one during the game to pair it. macOS asks once for Bluetooth access.
 Portuguese
 Press a button to join
+Render resolution
 Render scale
 Renders about a quarter more pixels: a little slower and warmer.
+Renders the game's 3D at that multiple of its size: sharper, and more GPU time and memory.
+Resolved by the app
 Rumble cutoff
 Rumble strength
 Russian
@@ -72,6 +79,7 @@ The size of the on-screen controls. Controls move toward medium when a size does
 Touch feedback
 Traditional Chinese
 Up to one frame more display latency.
+Upscaler at 1.5× / 2×
 Upscaling
 Uses more GPU time and can increase heat.
 Where the left stick of the on-screen controls sits.

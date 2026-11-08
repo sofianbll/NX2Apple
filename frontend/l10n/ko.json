@@ -1384,6 +1384,7 @@
   "launch.opt.DM_TOUCH_STICK.higher": "더 위",
   "launch.opt.DM_TOUCH_STICK.inward": "안쪽",
   "launch.opt.DM_UPSCALER.game": "게임 자체",
+  "launch.opt.DM_UPSCALE_GAME.keep": "게임 자체",
   "launch.opt.DM_UPSCALER.metalfx": "MetalFX",
   "launch.rowReset": "이 설정을 기본값으로 되돌리기",
   "launch.savesNote": "이 게임의 저장 데이터를 가져오거나 내보내고 백업을 확인하세요.",

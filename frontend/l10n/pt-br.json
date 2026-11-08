@@ -1384,6 +1384,7 @@
   "launch.opt.DM_TOUCH_STICK.higher": "Mais alto",
   "launch.opt.DM_TOUCH_STICK.inward": "Para dentro",
   "launch.opt.DM_UPSCALER.game": "Do próprio jogo",
+  "launch.opt.DM_UPSCALE_GAME.keep": "Do próprio jogo",
   "launch.opt.DM_UPSCALER.metalfx": "MetalFX",
   "launch.rowReset": "Restaurar este ajuste ao padrão",
   "launch.savesNote": "Importe ou exporte o save deste jogo e veja os backups dele.",
