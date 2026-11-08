@@ -186,6 +186,8 @@ func hop(_ body: @escaping @MainActor () -> Void) {
     /// default under the input folder (issue #5 — an upstream checkout has no --work-dir).
     package var effectiveWorkDir = ""
     package var lastBuildCommand: [String] = []   // this session's last build, for Copy diagnostics (Diagnostics.swift)
+    /// Enabled code-mod folders from the library, baked by the NSP script. Empty for a new build or when the code group is off.
+    package var modPaths: [String] = []
 
     // ---- Installing on an iPhone or iPad (Xcode with a development certificate) ----
     // Optional: with a paired device and a signing team chosen, the script prepares the game's Xcode project

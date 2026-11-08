@@ -1345,7 +1345,7 @@
   "launch.frameTimesSummary": "%d bildrutor · %.0f fps · median %.1f ms · 99 %% %.1f ms · långsammast %.0f ms · hack %d · tappade %d",
   "launch.modCode": "Ändrar spelets kod (exefs): stöds inte",
   "launch.mods": "Moddar",
-  "launch.modsHow": "Lägg varje modd i en egen mapp i moddmappen (Öppna moddmapp). Moddar som ändrar spelets kod (exefs) stöds inte.",
+  "launch.modsHow": "Lägg varje modd i en egen mapp i moddmappen (Öppna moddmapp). Kodmoddar (exefs) byggs in när spelet kompileras om och växlas tillsammans.",
   "launch.modsNone": "Inga moddar ännu",
   "launch.modsNote": "En modd ändrar filerna som spelet läser. Säkerhetskopiera sparfilerna innan du slår på eller av en modd: en sparfil från en modd kanske inte kan läsas utan den.",
   "launch.modsNoteOrder": "En modd ändrar filerna som spelet läser. Säkerhetskopiera sparfilerna innan du slår på eller av en modd: en sparfil från en modd kanske inte kan läsas utan den. När två moddar ersätter samma fil gäller den som ligger högre i listan.",

@@ -104,20 +104,34 @@ final class LaunchOptionsTests: IsolatedDefaultsTestCase {
         var game = LibraryGame(titleID: "01007EF00011E000", name: "Zelda")
         let folder = GameMod.folder(for: game, library: temporary.path)
         let fm = FileManager.default
-        for path in ["B Plain/Actor/x.bin", "A Romfs/romfs/Actor/y.bin", "C Atmosphere/atmosphere/contents/01007EF00011E000/romfs/z.bin", "D Code/exefs/main.npdm"] {
+        for path in ["B Plain/Actor/x.bin", "A Romfs/romfs/Actor/y.bin", "C Atmosphere/atmosphere/contents/01007EF00011E000/romfs/z.bin",
+                     "D Code/exefs/2.0.2.pchtxt", "D Code/romfs/d.bin", "E Code Too/exefs/e.ips", "F Unsupported/exefs/main.npdm"] {
             let file = folder.appendingPathComponent(path)
             try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data([1]).write(to: file)
         }
+        game.appPath = temporary.appendingPathComponent("Game.app").path
+        let builtIn = temporary.appendingPathComponent("Game.app/Contents/Resources/dm/mods/D Code/dm_code.tsv")
+        try fm.createDirectory(at: builtIn.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1]).write(to: builtIn)
         let mods = GameMod.list(in: folder, titleID: game.titleID)
-        XCTAssertEqual(mods.map(\.name), ["A Romfs", "B Plain", "C Atmosphere", "D Code"])
-        XCTAssertEqual(mods.map(\.usable), [true, true, true, false])
-        XCTAssertEqual(game.modEnvironment(mods), [:])
+        XCTAssertEqual(mods.map(\.name), ["A Romfs", "B Plain", "C Atmosphere", "D Code", "E Code Too", "F Unsupported"])
+        XCTAssertEqual(mods.map(\.usable), [true, true, true, true, true, false])
+        XCTAssertEqual(mods.map(\.code), [false, false, false, true, true, false])
         game.mods = ["C Atmosphere", "D Code", "A Romfs"]
-        XCTAssertEqual(game.modEnvironment(mods)["DM_ROMFS_OVERLAY"],
+        var environment = game.modEnvironment(mods)
+        XCTAssertEqual(environment["DM_MODS_OFF"], "D Code", "one code mod off turns the build's whole code group off")
+        XCTAssertEqual(environment["DM_ROMFS_OVERLAY"],
                        [folder.appendingPathComponent("A Romfs/romfs").path,
                         folder.appendingPathComponent("C Atmosphere/atmosphere/contents/01007EF00011E000/romfs").path].joined(separator: ":"),
-                       "the list's order (higher wins), and a code-only mod left out")
+                       "a mixed mod's RomFS stays off with its code")
+        game.mods.append("E Code Too")
+        environment = game.modEnvironment(mods)
+        XCTAssertNil(environment["DM_MODS_OFF"])
+        XCTAssertEqual(environment["DM_ROMFS_OVERLAY"],
+                       [folder.appendingPathComponent("A Romfs/romfs").path,
+                        folder.appendingPathComponent("C Atmosphere/atmosphere/contents/01007EF00011E000/romfs").path,
+                        folder.appendingPathComponent("D Code/romfs").path].joined(separator: ":"))
     }
 
     func testShortChoicesAreSegmentedAndTheGameLanguageIsAlwaysAMenu() {

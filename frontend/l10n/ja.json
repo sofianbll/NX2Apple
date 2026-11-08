@@ -1344,7 +1344,7 @@
   "launch.frameTimesSummary": "%d フレーム · %.0f fps · 中央値 %.1f ms · 99%% %.1f ms · 最遅 %.0f ms · カクつき %d · ドロップ %d",
   "launch.modCode": "ゲームのコード（exefs）を変更します：サポート対象外",
   "launch.mods": "Mod",
-  "launch.modsHow": "各 Mod を mods フォルダ内の専用のフォルダに入れてください（「mods フォルダを開く」）。ゲームのコード（exefs）を変更する Mod はサポートされていません。",
+  "launch.modsHow": "各 Mod を mods フォルダ内の専用のフォルダに入れてください（「mods フォルダを開く」）。コード Mod（exefs）はゲームの再ビルド時に組み込まれ、まとめて切り替わります。",
   "launch.modsNone": "まだ Mod がありません",
   "launch.modsNote": "Mod はゲームが読み込むファイルを変更します。Mod のオン/オフを切り替える前に、セーブデータをバックアップしてください。Mod を使って作ったセーブデータは、Mod なしでは読み込めない場合があります。",
   "launch.modsNoteOrder": "Mod はゲームが読み込むファイルを変更します。Mod のオン/オフを切り替える前に、セーブデータをバックアップしてください。Mod を使って作ったセーブデータは、Mod なしでは読み込めない場合があります。2 つの Mod が同じファイルを置き換える場合、一覧で上にある方が優先されます。",

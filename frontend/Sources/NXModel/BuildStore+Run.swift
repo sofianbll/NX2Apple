@@ -33,9 +33,9 @@ extension BuildStore {
             fail(repo.path.isEmpty ? t("msg.repoInvalidEmpty") : String(format: t("msg.repoInvalid"), shortPath(repo.path)))
             return
         }
-        // The experimental builder runs `nxb build` and never the script: no nxb, or one too old, stops here (#749). A game nxb does not take ends with its own exit code 4
-        nxbRun = ExperimentalBuilder.featureEnabled && experimentalBuilder
-        if let why = experimentalBuilderProblem() { fail(why); return }
+        let buildModPaths = target == BuildTarget.mac ? modPaths : []   // this carry's code-mod embedding is Mac-only
+        nxbRun = ExperimentalBuilder.featureEnabled && experimentalBuilder && buildModPaths.isEmpty   // nxb has no --mods: code mods use the script directly
+        if nxbRun, let why = experimentalBuilderProblem() { fail(why); return }
         // Resolve the interpreter here if the dependency check has not landed yet. checkDeps()
         // runs on a background queue and startBuild() can beat it — for a moment deps.pythonPath is
         // empty, and the old fallback was Apple's /usr/bin/python3 (3.9), which the script then
@@ -158,6 +158,7 @@ extension BuildStore {
             }
         }
         if hasWorkDir { args += ["--work-dir", workDir] }
+        for mod in buildModPaths { args += ["--mods", mod] }
         // The image of this game the other platform's build left (the iPhone build's games/<id>/romfs.img, the Mac app's): the
         // script takes it in place of extracting the RomFS again once it checks out as this version's (#708). A game folder is packed, not extracted.
         // Only for the script: the experimental builder gets these arguments too, and `nxb build` has no such option (0.6.3 and 0.6.4 stop at it).

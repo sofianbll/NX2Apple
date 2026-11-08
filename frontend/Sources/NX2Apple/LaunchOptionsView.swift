@@ -454,6 +454,16 @@ struct LaunchOptionsView: View {
 
     // ---- mods ----
 
+    private func modOn(_ mod: GameMod, game: LibraryGame, list: [GameMod]) -> Bool {
+        mod.usable && (mod.code ? game.codeModsEnabled(list) : game.mods.contains(mod.name))
+    }
+
+    private func setMod(_ mod: GameMod, on: Bool, game: LibraryGame, list: [GameMod]) {
+        for item in list where item.code == mod.code && (mod.code || item.name == mod.name) {
+            library.setMod(item.name, on: on, for: game.id)
+        }
+    }
+
     /// The game's mods folder as switches. A mod changes the files the game reads, saves included: the note says so, and
     /// Show saves opens the folder to back them up before switching one.
     @ViewBuilder private func modsSection(_ game: LibraryGame) -> some View {
@@ -475,19 +485,21 @@ struct LaunchOptionsView: View {
                         HStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(mod.name).font(.manrope(14, .medium)).lineLimit(1)
-                                if !mod.usable {
+                                if mod.code {
+                                    Text(loc.t("launch.modCodeBuilt")).font(.manrope(12)).foregroundStyle(LauncherPalette.secondaryText)
+                                } else if !mod.usable {
                                     Text(loc.t("launch.modCode")).font(.manrope(12)).foregroundStyle(LauncherPalette.secondaryText)
                                 }
                             }
                             Spacer(minLength: 12)
-                            Toggle(mod.name, isOn: Binding(get: { mod.usable && game.mods.contains(mod.name) },
-                                                     set: { library.setMod(mod.name, on: $0, for: gameID) }))
+                            Toggle(mod.name, isOn: Binding(get: { modOn(mod, game: game, list: list) },
+                                                     set: { setMod(mod, on: $0, game: game, list: list) }))
                                 .labelsHidden().toggleStyle(LauncherSwitchStyle()).disabled(!mod.usable)
                         }
                         .padding(.horizontal, 18).padding(.vertical, 13).frame(minHeight: 52)
                         .padTarget("mod." + mod.name, scope: "launch", radius: 10,
-                                   activate: { if mod.usable { library.setMod(mod.name, on: !game.mods.contains(mod.name), for: gameID) } },
-                                   adjust: { _ in if mod.usable { library.setMod(mod.name, on: !game.mods.contains(mod.name), for: gameID) } })
+                                   activate: { if mod.usable { setMod(mod, on: !modOn(mod, game: game, list: list), game: game, list: list) } },
+                                   adjust: { _ in if mod.usable { setMod(mod, on: !modOn(mod, game: game, list: list), game: game, list: list) } })
                         divider
                     }
                 }

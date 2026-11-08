@@ -343,6 +343,40 @@ import XCTest
         }
     }
 
+    func testCodeModsUseTheScriptOnMacAndStayOutOfIOSBuilds() throws {
+        let runner = FakeProcessRunner()
+        runner.answer = { _ in ProcessResult(status: 0, out: "nxb 0.6.3\n") }
+        let store = BuildStore(localizer: localizer, runner: runner, repo: repo, deps: deps, engine: engine, devices: devices, defaults: defaults)
+        for path in [EngineLayout.marker] + RepoLayout.requiredTools {
+            let url = temporary.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try "'--work-dir'".write(to: url, atomically: true, encoding: .utf8)
+        }
+        repo.path = temporary.path
+        store.take(picked: [try file("Game [0100000000010000].nsp")], kind: .base)
+        store.take(picked: [try file("test.keys")], kind: .keys)
+        store.outDir = temporary.path
+        store.modPaths = ["/mods/A", "/mods/B"]
+        let nxb = temporary.path + "/nxbuild/nxb"
+        try FileManager.default.createDirectory(atPath: (nxb as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try Data([0]).write(to: URL(fileURLWithPath: nxb))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nxb)
+        store.experimentalBuilder = true; store.experimentalBuilderPath = nxb
+        store.target = BuildTarget.mac
+        for enabled in [false, true] {
+            ExperimentalBuilder.featureEnabled = enabled
+            store.startBuild()
+            let args = store.lastBuildCommand
+            XCTAssertEqual(args.first, deps.pythonPath, "nxb has no --mods, so the script runs even when nxb is enabled")
+            XCTAssertEqual(args.indices.filter { args[$0] == "--mods" }.map { args[$0 + 1] }, store.modPaths)
+        }
+        store.target = BuildTarget.ios; devices.exportIPA = true
+        store.startBuild()
+        let args = store.lastBuildCommand
+        XCTAssertEqual(Array(args.prefix(2)), [nxb, "build"])
+        XCTAssertFalse(args.contains("--mods"), "this carry has no iOS code-mod embedding")
+    }
+
     func testRetryBuildsTheChosenTitleAndKeepsItsOutputsSeparate() throws {
         let store = makeStore()
         for path in [EngineLayout.marker] + RepoLayout.requiredTools {

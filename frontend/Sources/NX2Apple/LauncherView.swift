@@ -607,7 +607,7 @@ struct LauncherView: View {
         guard !m.running else { page = .builds; return }
         m.leaveGameFolder()
         for index in m.slots.indices { m.slots[index].paths = []; m.slots[index].problem = "" }
-        m.gameDir = ""; m.done = false; m.doneNote = ""; m.macAppPath = ""; m.stages = []
+        m.gameDir = ""; m.done = false; m.doneNote = ""; m.macAppPath = ""; m.stages = []; m.modPaths = []
         if m.outDir.isEmpty && !library.folder.isEmpty { m.outDir = library.folder }
         page = .builds
     }
@@ -627,6 +627,9 @@ struct LauncherView: View {
             m.gameDir = game.sourceFolder.isEmpty ? (m.basePath as NSString).deletingLastPathComponent : game.sourceFolder
         }
         m.macAppPath = game.appPath
+        let modFolder = GameMod.folder(for: game, library: library.folder)
+        let availableMods = GameMod.list(in: modFolder, titleID: game.titleID)
+        m.modPaths = game.codeModsEnabled(availableMods) ? availableMods.filter(\.code).map(\.folder) : []
         let scanDefault = game.inputs[GameLibrary.folderInput] == nil ? (m.basePath as NSString).deletingLastPathComponent : m.gameDir
         m.outDir = BuildOutput.defaultDirectory(current: game.outputDirectory, scanDefault: scanDefault,
                                                 sourceFolder: m.gameDir, gamesFolder: library.folder,

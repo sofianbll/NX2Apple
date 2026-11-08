@@ -1346,7 +1346,7 @@
   "launch.frameTimesSummary": "%d Bilder · %.0f fps · Median %.1f ms · 99 %% %.1f ms · langsamstes %.0f ms · Ruckler %d · verworfen %d",
   "launch.modCode": "Ändert den Code des Spiels (exefs): nicht unterstützt",
   "launch.mods": "Mods",
-  "launch.modsHow": "Lege jede Mod in einen eigenen Ordner im Mods-Ordner („Mods-Ordner öffnen“). Mods, die den Code des Spiels (exefs) ändern, werden nicht unterstützt.",
+  "launch.modsHow": "Lege jede Mod in einen eigenen Ordner im Mods-Ordner („Mods-Ordner öffnen“). Code-Mods (exefs) werden beim erneuten Kompilieren des Spiels eingebaut und gemeinsam umgeschaltet.",
   "launch.modsNone": "Noch keine Mods",
   "launch.modsNote": "Eine Mod ändert die Dateien, die das Spiel liest. Sichere die Spielstände, bevor du eine Mod ein- oder ausschaltest: Ein Spielstand, der mit einer Mod entstanden ist, lässt sich ohne sie womöglich nicht laden.",
   "launch.modsNoteOrder": "Eine Mod ändert die Dateien, die das Spiel liest. Sichere die Spielstände, bevor du eine Mod ein- oder ausschaltest: Ein Spielstand, der mit einer Mod entstanden ist, lässt sich ohne sie womöglich nicht laden. Ersetzen zwei Mods dieselbe Datei, gewinnt die weiter oben in der Liste.",

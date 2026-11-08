@@ -103,14 +103,15 @@ extension LibraryGame {
     }
 }
 
-/// A folder in the game's mods folder: RomFS files that replace the game's own (DM_ROMFS_OVERLAY, hle_fs.c). The files are
-/// found in <mod>/romfs, in an Atmosphère layout (<mod>/atmosphere/contents/<title ID>/romfs, <mod>/contents/<title ID>/romfs)
-/// or in the folder itself. A mod with only exefs/ changes the game's code, which the rewriter does not take: listed, not usable.
+/// A folder in the game's mods folder: RomFS files that replace the game's own (DM_ROMFS_OVERLAY, hle_fs.c), and ExeFS patches
+/// baked into a second copy of the modules at build time. RomFS is found in <mod>/romfs, an Atmosphère layout or the folder itself.
 struct GameMod: Identifiable, Equatable {
     let name: String
+    let folder: String
     let romfs: String?
+    let code: Bool
     var id: String { name }
-    var usable: Bool { romfs != nil }
+    var usable: Bool { romfs != nil || code }
 
     static func folder(for game: LibraryGame, library: String) -> URL {
         let root = library.isEmpty
@@ -128,12 +129,21 @@ struct GameMod: Identifiable, Equatable {
             var dir: ObjCBool = false
             let mod = folder.appendingPathComponent(name)
             guard fm.fileExists(atPath: mod.path, isDirectory: &dir), dir.boolValue else { return nil }
+            let code = (fm.enumerator(at: mod, includingPropertiesForKeys: nil)?.contains { element in
+                (element as? URL).map { ["pchtxt", "ips"].contains($0.pathExtension.lowercased()) } ?? false
+            } ?? false)
             let candidates = ["romfs", "atmosphere/contents/\(titleID)/romfs", "contents/\(titleID)/romfs"].map { mod.appendingPathComponent($0).path }
-            if let found = candidates.first(where: { fm.fileExists(atPath: $0) }) { return GameMod(name: name, romfs: found) }
+            if let found = candidates.first(where: { fm.fileExists(atPath: $0) }) { return GameMod(name: name, folder: mod.path, romfs: found, code: code) }
             let top = ((try? fm.contentsOfDirectory(atPath: mod.path)) ?? []).filter { !$0.hasPrefix(".") }
             let codeOnly = top.allSatisfy { ["exefs", "atmosphere", "contents"].contains($0.lowercased()) } && !top.isEmpty
-            return GameMod(name: name, romfs: codeOnly || top.isEmpty ? nil : mod.path)
+            return GameMod(name: name, folder: mod.path, romfs: codeOnly || top.isEmpty ? nil : mod.path, code: code)
         }
+    }
+
+    /// Names recorded by the build in Resources/dm/mods. The loader switches all of them off when any code mod is off.
+    static func builtInCodeNames(app: String) -> [String] {
+        let root = URL(fileURLWithPath: app).appendingPathComponent("Contents/Resources/dm/mods")
+        return ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter { FileManager.default.fileExists(atPath: root.appendingPathComponent($0).appendingPathComponent("dm_code.tsv").path) }.sorted()
     }
 }
 
@@ -154,11 +164,20 @@ extension LibraryGame {
         })
     }
 
-    /// DM_ROMFS_OVERLAY for the mods switched on that can be used, in the list's order: where two replace one file, the
-    /// one higher in the list wins (the host looks in the folders in order).
+    /// The build makes one code-mods copy of the modules, so every code mod is on or all of them are off.
+    func codeModsEnabled(_ available: [GameMod]) -> Bool {
+        let code = available.filter(\.code)
+        return !code.isEmpty && code.allSatisfy { mods.contains($0.name) }
+    }
+
+    /// Enabled overlays in list order. A mixed mod's RomFS follows the code group, and DM_MODS_OFF selects original modules when it is off.
     func modEnvironment(_ available: [GameMod]) -> [String: String] {
-        let paths = available.filter { mods.contains($0.name) }.compactMap(\.romfs)
-        return paths.isEmpty ? [:] : ["DM_ROMFS_OVERLAY": paths.joined(separator: ":")]
+        let codeOn = codeModsEnabled(available)
+        let paths = available.filter { $0.code ? codeOn : mods.contains($0.name) }.compactMap(\.romfs)
+        var environment = paths.isEmpty ? [:] : ["DM_ROMFS_OVERLAY": paths.joined(separator: ":")]
+        let off = codeOn ? [] : GameMod.builtInCodeNames(app: appPath)
+        if !off.isEmpty { environment["DM_MODS_OFF"] = off.joined(separator: "/") }
+        return environment
     }
 }
 

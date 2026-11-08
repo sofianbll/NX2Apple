@@ -1345,7 +1345,7 @@
   "launch.frameTimesSummary": "%d fotogrammi · %.0f fps · mediana %.1f ms · 99%% %.1f ms · più lento %.0f ms · scatti %d · persi %d",
   "launch.modCode": "Modifica il codice del gioco (exefs): non supportata",
   "launch.mods": "Mod",
-  "launch.modsHow": "Fai clic su «Apri cartella mod» e inserisci ogni mod in una sottocartella separata. Poi fai clic su «Aggiorna». Le mod che modificano il codice eseguibile del gioco (ExeFS) non sono supportate.",
+  "launch.modsHow": "Fai clic su «Apri cartella mod» e inserisci ogni mod in una sottocartella separata. Poi fai clic su «Aggiorna». Le mod di codice (ExeFS) vengono integrate quando ricompili il gioco e si attivano insieme.",
   "launch.modsNone": "Nessuna mod trovata",
   "launch.modsNote": "Una mod modifica i file letti dal gioco. Fai un backup dei salvataggi prima di attivare o disattivare una mod: un salvataggio creato con una mod potrebbe non caricarsi senza.",
   "launch.modsNoteOrder": "Una mod modifica i file letti dal gioco. Fai un backup dei salvataggi prima di attivare o disattivare una mod: un salvataggio creato con una mod potrebbe non caricarsi senza. Se due mod sostituiscono lo stesso file, vince quella più in alto nell’elenco.",
