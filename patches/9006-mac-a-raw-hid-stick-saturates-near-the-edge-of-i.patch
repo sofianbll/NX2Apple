@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sofian <sofianbll.x@gmail.com>
+Date: Sun, 8 Nov 2026 14:38:05 +0100
+Subject: [PATCH] Mac: a raw HID stick saturates near the edge of its reach
+
+A report 0x3F pad's stick is measured against the furthest deflection seen so far. Held "full", a PowerA gives 0.91 to 0.97 of that reach (measured on 2026-11-08), so the game never got a full tilt, and Pokemon Legends Z-A dropped from running back to walking. Past PAD_HID_RAW_OUTER (0.9) of the reach the stick now reads full; other HID pads are unchanged.
+
+Upstream-Status: pending
+Reason: Let a PowerA Pro Controller clone reach full tilt so games that run only at full tilt keep running.
+Issue: seedds/nxnative#989
+---
+ dm/host/pad_hid.h         | 13 ++++++++-----
+ dm/host/tests/t_pad_hid.c |  3 +++
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/dm/host/pad_hid.h b/dm/host/pad_hid.h
+index 1dd8a2b..f3461ad 100644
+--- a/dm/host/pad_hid.h
++++ b/dm/host/pad_hid.h
+@@ -73,11 +73,14 @@ static float pad_hid_raw_axis(pad_hid *h, int a, float v) {
+ static int pad_hid_hat(long v, long min, long max) { return v >= min && v <= max && v - min < 8 ? (int)(v - min) : -1; }   // past the 8 directions: centered
+ // One stick: a round dead zone against drift (PAD_HID_DEAD of full deflection), and past it the deflection scaled back to start at 0, so the stick neither jumps to the dead zone's
+ // edge nor loses a small x while y is deflected. Each axis is clamped after the scale: a square-gated stick still reaches full x and y in its corners.
++// A raw stick (report 0x3F) also saturates past PAD_HID_RAW_OUTER of its reach: the reach is the furthest deflection seen, which a held stick
++// rarely meets again (a PowerA held "full" gives 0.91 to 0.97 of it), and a game that runs only at full tilt would drop back to walking.
+ #define PAD_HID_DEAD 0.12f
+-static void pad_hid_stick(float x, float y, int32_t *ox, int32_t *oy) {
++#define PAD_HID_RAW_OUTER 0.9f
++static void pad_hid_stick(float x, float y, float outer, int32_t *ox, int32_t *oy) {
+     float r = sqrtf(x * x + y * y);
+     if (r <= PAD_HID_DEAD) { *ox = *oy = 0; return; }
+-    float k = (r - PAD_HID_DEAD) / (1 - PAD_HID_DEAD) / r; x *= k; y *= k;
++    float k = (r - PAD_HID_DEAD) / (outer - PAD_HID_DEAD) / r; x *= k; y *= k;
+     *ox = (int32_t)((x < -1 ? -1 : x > 1 ? 1 : x) * DM_STICK_MAX); *oy = (int32_t)((y < -1 ? -1 : y > 1 ? 1 : y) * DM_STICK_MAX);
+ }
+ 
+@@ -91,7 +94,7 @@ static uint64_t pad_hid_buttons(const pad_hid *h) {
+     return m;
+ }
+ static void pad_hid_sticks(const pad_hid *h, int32_t s[4]) {   // lx, ly, rx, ry; HID's Y grows downward, the Switch's upward
+-    int z = h->has[PH_Z];
+-    pad_hid_stick(h->axis[PH_X], -h->axis[PH_Y], &s[0], &s[1]);
+-    pad_hid_stick(h->axis[z ? PH_Z : PH_RX], -h->axis[z ? PH_RZ : PH_RY], &s[2], &s[3]);
++    int z = h->has[PH_Z]; float outer = h->raw ? PAD_HID_RAW_OUTER : 1;
++    pad_hid_stick(h->axis[PH_X], -h->axis[PH_Y], outer, &s[0], &s[1]);
++    pad_hid_stick(h->axis[z ? PH_Z : PH_RX], -h->axis[z ? PH_RZ : PH_RY], outer, &s[2], &s[3]);
+ }
+diff --git a/dm/host/tests/t_pad_hid.c b/dm/host/tests/t_pad_hid.c
+index 677c2f7..ed6801c 100644
+--- a/dm/host/tests/t_pad_hid.c
++++ b/dm/host/tests/t_pad_hid.c
+@@ -117,6 +117,9 @@ int main(void) {
+     CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.08f)) < 1e-6f);
+     CHECK(pad_hid_raw_axis(&h, PH_Y, 0.9f) == 1 && h.rest[PH_Y] == 0);       // held while connecting: not a rest
+     pad_hid_init(&h, NULL, 0); CHECK(!h.raw);
++    { pad_hid r; int32_t q[4]; pad_hid_init(&r, NULL, 1); r.axis[PH_Y] = -0.91f; pad_hid_sticks(&r, q);
++      CHECK(q[0] == 0 && q[1] == DM_STICK_MAX);                              // a raw stick held at 91 % of its reach is full: the game runs
++      r.axis[PH_Y] = -0.5f; pad_hid_sticks(&r, q); CHECK(q[1] > DM_STICK_MAX / 3 && q[1] < DM_STICK_MAX * 2 / 3); }   // half way stays analog
+     { uint8_t r[PAD_HID_LIGHTS_SIZE]; pad_hid_lights(r, 0); CHECK(r[0] == 0x01 && r[2] == 0x00 && r[3] == 0x01 && r[9] == 0x40 && r[10] == 0x30 && r[11] == 0x1 && r[12] == 0 && r[48] == 0);
+       pad_hid_lights(r, 3); CHECK(r[11] == 0xF); pad_hid_lights(r, 7); CHECK(r[11] == 0x6); }   // players 1, 4 and 8, as the console lights them
+     pad_hid_init(&h, NULL, 0);
