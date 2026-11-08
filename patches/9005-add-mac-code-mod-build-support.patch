@@ -1,0 +1,867 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sofian <sofianbll.x@gmail.com>
+Date: Sun, 8 Nov 2026 14:12:02 +0100
+Subject: [PATCH] Add Mac code-mod build support
+
+Carry the code-patch subset of seedds/nxnative#883 on the NX2Apple pin. Parse IPSwitch, IPS and IPS32 files, apply matching build IDs after registered cuts and before rewriting, reject cuts and mod overlaps, and rewrite changed modules a second time. Accept full-line # comments used by released IPSwitch packs.
+
+NX2Apple keeps its existing DM_ROMFS_OVERLAY. Only dm_code.tsv metadata is packed, and DM_MODS_OFF switches the shared code-mods copy on or off. Runtime RomFS scanning, mod env files and iOS embedding are intentionally not included.
+
+Front-ends: build_ipa_from_nsp.py --mods is supported with --platform mac and mac-app. Set DM_MODS to staged metadata and DM_MODS_OFF to slash-separated disabled mod names.
+
+Upstream-Status: forwarded seedds/nxnative#883
+Reason: Carry the Mac code-mods subset with NX2Apple RomFS overlays until upstream merges it.
+Issue: seedds/nxnative#883
+---
+ README.md                     |   2 +
+ dm/host/dm.h                  |   1 +
+ dm/host/hle_mods.c            |  40 ++++++++++
+ dm/host/loader.c              |  14 +++-
+ dm/host/mods.h                |   4 +
+ dm/host/tests/Makefile        |  16 ++--
+ dm/host/tests/t_mods.c        |  27 +++++++
+ dm/mac/launcher.c             |   1 +
+ dm/mac/pack_app.py            |   7 +-
+ dm/tools/exefs_mods.py        |  95 ++++++++++++++++++++++++
+ dm/tools/mods.py              |  93 ++++++++++++++++++++++++
+ dm/tools/patch_nso.py         |  23 ++++++
+ dm/tools/tests/test_mods.py   | 133 ++++++++++++++++++++++++++++++++++
+ docs/development.md           |   6 ++
+ docs/env_switches.tsv         |   3 +
+ docs/playing.md               |   4 +
+ scripts/build_ipa_from_nsp.py |  73 ++++++++++++++++++-
+ 17 files changed, 528 insertions(+), 14 deletions(-)
+ create mode 100644 dm/host/hle_mods.c
+ create mode 100644 dm/host/mods.h
+ create mode 100644 dm/host/tests/t_mods.c
+ create mode 100644 dm/tools/exefs_mods.py
+ create mode 100644 dm/tools/mods.py
+ create mode 100644 dm/tools/tests/test_mods.py
+
+diff --git a/README.md b/README.md
+index b4ec622f..41b75868 100644
+--- a/README.md
++++ b/README.md
+@@ -65,6 +65,8 @@ The IPA appears in the game's folder. The first build takes 30–60 minutes and
+ 
+ To play on the Mac instead, add `--platform mac-app`: you get a Mac app of the game to open from Finder. All options: [The packing script in detail](docs/development.md#the-packing-script-in-detail).
+ 
++For a Mac build with code mods, add `--mods <mod folder>`: ExeFS `.pchtxt`, IPS and IPS32 patches are built into a switchable second copy of the modules ([Mods](docs/playing.md#code-mods-on-the-mac)).
++
+ ### Install
+ 
+ Install the IPA on your iPhone or iPad with a sideloading tool such as AltStore, Sideloadly or LiveContainer. If your tool offers **Increased Memory Limit**, turn it on: the bigger games need it.
+diff --git a/dm/host/dm.h b/dm/host/dm.h
+index 985a305b..6fa0321c 100644
+--- a/dm/host/dm.h
++++ b/dm/host/dm.h
+@@ -47,6 +47,7 @@ enum { STB_LOCAL = 0, STB_WEAK = 2, STV_DEFAULT = 0 };
+ // Run-time state of one NSO module
+ typedef struct {
+     char name[16];
++    uint8_t code_mods;         // loaded from the modules' codemods/ copy, rewritten with the mods' code patches (hle_mods.c; Mac only)
+     uint8_t *base;             // Start address of the image (including the patch area) in the host address space
+     size_t size;
+     uint64_t text_end, ro_off, data_off, key_page_off, key_page_size;   // From the rewriter fixups header
+diff --git a/dm/host/hle_mods.c b/dm/host/hle_mods.c
+new file mode 100644
+index 00000000..1c6c47c0
+--- /dev/null
++++ b/dm/host/hle_mods.c
+@@ -0,0 +1,40 @@
++// Code mods staged by build_ipa_from_nsp.py --mods. Each <DM_MODS>/<name>/dm_code.tsv marks patches present in the modules' codemods copy.
++// One copy holds every code mod, so they switch together: DM_MODS_OFF=<name>[/<name>…] turns the whole copy off when any one is off.
++// RomFS is deliberately absent here. NX2Apple passes enabled romfs/ folders through DM_ROMFS_OVERLAY, as it did before code mods.
++#include "mods.h"
++#include <dirent.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++
++static int switched_off(const char *name) {
++    const char *off = getenv("DM_MODS_OFF"); size_t k = strlen(name);
++    for (const char *s = off; s && *s; ) {
++        const char *t = strchr(s, '/'); size_t len = t ? (size_t)(t - s) : strlen(s);
++        if (len == k && !strncmp(s, name, k)) return 1;
++        s = t ? t + 1 : NULL;
++    }
++    return 0;
++}
++
++int dm_mods_code_wanted(void) {
++    char def[1100]; const char *e = getenv("DM_MODS");
++    if (!e || !*e) { const char *r = getenv("DM_ROOT"); if (!r || !*r) return 0; snprintf(def, sizeof def, "%s/mods", r); e = def; }
++    char *all = strdup(e), *save = NULL; if (!all) abort();
++    int any = 0;
++    for (char *root = strtok_r(all, ":", &save); root; root = strtok_r(NULL, ":", &save)) {
++        DIR *d = opendir(root); if (!d) continue;
++        struct dirent *ent;
++        while ((ent = readdir(d))) {
++            if (ent->d_name[0] == '.') continue;
++            char p[1200]; snprintf(p, sizeof p, "%s/%s/dm_code.tsv", root, ent->d_name);
++            if (access(p, F_OK)) continue;
++            any = 1;
++            if (switched_off(ent->d_name)) { closedir(d); free(all); return 0; }
++        }
++        closedir(d);
++    }
++    free(all);
++    return any;
++}
+diff --git a/dm/host/loader.c b/dm/host/loader.c
+index 8e623ece..ef23079e 100644
+--- a/dm/host/loader.c
++++ b/dm/host/loader.c
+@@ -1,6 +1,7 @@
+ // Multi-module loading (playing the role of Horizon's rtld): mapping, claiming thread slots, gate registration, cross-module relocation, take-over by name, segment permissions.
+ // The code area (original text and patch area) is set to read-only+execute as soon as it is copied in, and from then on the loader only writes data: on iOS these two blocks must be embedded as is as signed code segments.
+ #include "dm.h"
++#include "mods.h"
+ #include <TargetConditionals.h>
+ #include <fcntl.h>
+ #include <errno.h>
+@@ -815,24 +816,31 @@ const char *dm_module_dir(void) { return g_module_dir; }
+ 
+ void load_modules(const char *dir, const char **names, int n) {
+     strlcpy(g_module_dir, dir, sizeof g_module_dir);
++    // The Mac app carries a second copy of modules changed by code mods. DM_MODS_OFF switches them together; iOS has no such copy in this subset.
++    int want = TARGET_OS_IPHONE ? 0 : dm_mods_code_wanted(); char cdir[1100]; snprintf(cdir, sizeof cdir, "%s/codemods", dir);
+     // Map everything and parse the symbol tables first, then relocate all at once (cross-module symbols must all be in place first)
+     // DM_BOOTPROF: breakdown of ① host loading (milliseconds), to set the upper bound for ③ pre-relocation / mmap
+     uint64_t t0 = now_ns(), tm = 0, tp = 0, tg = 0, tr = 0, t;
+     FILE *nros = open_nros(dir);
+     allocate_modules(n, nros);
++    const char *mdir[n]; int code_loaded = 0;
+     for (int i = 0; i < n; i++) {
+         module_t *m = &g_mod[i];
+         strlcpy(m->name, names[i], sizeof m->name);
+-        read_layout(m, dir);
++        char t[1200]; snprintf(t, sizeof t, "%s/%s.fixups.tsv", cdir, m->name);
++        m->code_mods = want && !access(t, F_OK); mdir[i] = m->code_mods ? cdir : dir;
++        if (m->code_mods) { code_loaded = 1; LOG("%s: the copy with the mods' code patches (%s)", m->name, cdir); if (!strcmp(m->name, "main")) strlcpy(g_module_dir, cdir, sizeof g_module_dir); }
++        read_layout(m, mdir[i]);
+     }
++    if (want && !code_loaded) LOG("[RED] mods: code patches are on, but this build has no codemods copy (%s): the game runs its own code", cdir);
+     create_keys();
+     jit_layout_init();
+     for (int i = 0; i < n; i++) {
+         module_t *m = &g_mod[i];
+-        t = now_ns(); map_image(m, dir); tm += now_ns() - t;   // On return the code area is already read-only+execute; from here on the loader only writes data
++        t = now_ns(); map_image(m, mdir[i]); tm += now_ns() - t;   // On return the code area is already read-only+execute; from here on the loader only writes data
+         if (!i) tsd_check();
+         t = now_ns(); parse_dynamic(m); tp += now_ns() - t;
+-        t = now_ns(); register_gates(m, dir); tg += now_ns() - t;
++        t = now_ns(); register_gates(m, mdir[i]); tg += now_ns() - t;
+         LOG("%s: base %p size %#zx", names[i], m->base, m->size);
+         m->loaded = 1; g_loaded[g_nloaded++] = m; g_nmod++;
+     }
+diff --git a/dm/host/mods.h b/dm/host/mods.h
+new file mode 100644
+index 00000000..40b60ae5
+--- /dev/null
++++ b/dm/host/mods.h
+@@ -0,0 +1,4 @@
++// Code mods built into a Mac app (hle_mods.c). The front end keeps RomFS overlays separate.
++#pragma once
++
++int dm_mods_code_wanted(void);   // at least one built-in code mod, and none switched off through DM_MODS_OFF
+diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
+index 990d5295..3e4e5260 100644
+--- a/dm/host/tests/Makefile
++++ b/dm/host/tests/Makefile
+@@ -12,7 +12,7 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
+ GINC = $(if $(strip $(GAME)),-I../gen/$(GAME) -I../../games/$(GAME),$(error GAME is not set: make GAME=<base game title ID>: $(shell python3 ../../games/game.py list | awk -F'\t' '{printf "%s (%s)  ", $$1, $$3}')))
+ $(B)/t_fs $(B)/t_fs_case $(B)/t_fs_commit_list $(B)/t_fs_commit_list_tsan: ../romfs_image.h
+ GAME_H = ../gen/$(GAME)/game_profile.h
+-run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture $(B)/t_oe $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_output_stream $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old $(B)/t_pollwait $(B)/t_pctl $(B)/t_sf $(B)/t_time $(B)/t_shared_font $(B)/t_vorbis $(B)/t_vorbis_divides $(B)/t_hid $(B)/t_haptics $(B)/t_haptics_apple $(B)/t_cheats $(B)/t_pad_hid $(B)/t_input_map $(B)/t_launcher_contract $(B)/t_profile_runtime
++run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_mods $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture $(B)/t_oe $(B)/t_fs $(B)/t_fs_commit_list $(B)/t_thread_leak $(B)/t_fs_case $(B)/t_audio $(B)/t_output_stream $(B)/t_audio_spsc $(B)/t_swkbd $(B)/t_altstack $(B)/t_condvar $(B)/t_condvar_old $(B)/t_pollwait $(B)/t_pctl $(B)/t_sf $(B)/t_time $(B)/t_shared_font $(B)/t_vorbis $(B)/t_vorbis_divides $(B)/t_hid $(B)/t_haptics $(B)/t_haptics_apple $(B)/t_cheats $(B)/t_pad_hid $(B)/t_input_map $(B)/t_launcher_contract $(B)/t_profile_runtime
+ 	$(B)/t_language
+ 	$(B)/t_heap_size
+ 	$(B)/t_touch
+@@ -57,6 +57,7 @@ run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_to
+ 	$(B)/t_vi_history $(QUIET)
+ 	$(B)/t_nfc
+ 	$(B)/t_motion
++	$(B)/t_mods
+ 	$(B)/t_motion_apple
+ 	$(B)/t_pad_apple
+ 	$(B)/t_home_quit
+@@ -78,8 +79,8 @@ run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_to
+ 	$(B)/t_controllers_mac
+ run: $(B)/t_nro
+ run: $(B)/t_symbols
+-$(B)/t_symbols: t_symbols.c ../hle.c ../loader.c ../hle.h ../dm.h $(GAME_H) | $(B)
+-	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -Wno-deprecated-declarations -I.. $(GINC) -o $@ t_symbols.c ../hle_profile.c
++$(B)/t_symbols: t_symbols.c ../hle.c ../loader.c ../hle_mods.c ../hle.h ../dm.h $(GAME_H) | $(B)
++	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -Wno-deprecated-declarations -I.. $(GINC) -o $@ t_symbols.c ../hle_mods.c ../hle_profile.c
+ .PHONY: symbols
+ symbols: $(B)/t_symbols
+ 	$(B)/t_symbols
+@@ -101,8 +102,13 @@ $(B)/t_system_event: t_system_event.c ../hle_thread.c ../hle_sdk16.c ../hle_misc
+ .PHONY: system-event
+ system-event: $(B)/t_system_event
+ 	$(B)/t_system_event
+-$(B)/t_nro: t_nro.c ../loader.c ../hle_ro.c ../hle.h ../dm.h $(GAME_H) | $(B)
+-	$(CLANG) -O1 -g -Wall -Wno-unused-function -Wno-deprecated-declarations -I.. $(GINC) -o $@ t_nro.c ../hle_profile.c
++$(B)/t_mods: t_mods.c ../hle_mods.c ../mods.h ../dm.h | $(B)
++	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -I.. -o $@ t_mods.c
++.PHONY: mods
++mods: $(B)/t_mods
++	$(B)/t_mods
++$(B)/t_nro: t_nro.c ../loader.c ../hle_ro.c ../hle_mods.c ../hle.h ../dm.h $(GAME_H) | $(B)
++	$(CLANG) -O1 -g -Wall -Wno-unused-function -Wno-deprecated-declarations -I.. $(GINC) -o $@ t_nro.c ../hle_mods.c ../hle_profile.c
+ .PHONY: nro
+ nro: $(B)/t_nro
+ 	$(B)/t_nro
+diff --git a/dm/host/tests/t_mods.c b/dm/host/tests/t_mods.c
+new file mode 100644
+index 00000000..75e0d696
+--- /dev/null
++++ b/dm/host/tests/t_mods.c
+@@ -0,0 +1,27 @@
++// Built-in code mods switch together; RomFS folders and unrelated directories do not turn them on.
++#include "../hle_mods.c"
++#include <assert.h>
++#include <stdio.h>
++#include <sys/stat.h>
++
++static void make(const char *path) {
++    char command[1400]; snprintf(command, sizeof command, "mkdir -p '%s'", path); assert(!system(command));
++}
++static void code(const char *root, const char *name) {
++    char dir[1100], path[1200]; snprintf(dir, sizeof dir, "%s/%s", root, name); make(dir);
++    snprintf(path, sizeof path, "%s/dm_code.tsv", dir); FILE *f = fopen(path, "w"); assert(f); fputs("patch.pchtxt\n", f); fclose(f);
++}
++
++int main(void) {
++    const char *root = "build/mods-fixture"; make(root); code(root, "One"); code(root, "Two");
++    char romfs[1100]; snprintf(romfs, sizeof romfs, "%s/Files/romfs", root); make(romfs);
++    assert(!setenv("DM_MODS", root, 1)); unsetenv("DM_ROOT"); unsetenv("DM_MODS_OFF");
++    assert(dm_mods_code_wanted());
++    assert(!setenv("DM_MODS_OFF", "Two", 1)); assert(!dm_mods_code_wanted());
++    assert(!setenv("DM_MODS_OFF", "Other", 1)); assert(dm_mods_code_wanted());
++    assert(!setenv("DM_MODS_OFF", "One/Two", 1)); assert(!dm_mods_code_wanted());
++    assert(!setenv("DM_ROOT", root, 1)); unsetenv("DM_MODS"); unsetenv("DM_MODS_OFF");
++    assert(!dm_mods_code_wanted());   // DM_ROOT names the parent of mods, not the mods folder itself
++    assert(!setenv("DM_MODS", "build/mods-missing", 1)); assert(!dm_mods_code_wanted());
++    puts("mods ok"); return 0;
++}
+diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
+index f36f73b9..0b33937b 100644
+--- a/dm/mac/launcher.c
++++ b/dm/mac/launcher.c
+@@ -319,6 +319,7 @@ int main(int argc, char **argv) {
+     snprintf(p, sizeof p, "%s/font", dm); setenv("DM_FONT_DIR", p, 0);
+     snprintf(p, sizeof p, "%s/shader_map.tsv", dm); if (!stat(p, &st)) setenv("DM_NVN_SHMAP", p, 0);
+     snprintf(p, sizeof p, "%s/aoc", res); if (!stat(p, &st)) setenv("DM_AOC_DIR", p, 0);
++    snprintf(p, sizeof p, "%s/mods", dm); setenv("DM_MODS", p, 0);   // built-in code-mod switches only; RomFS stays in DM_ROMFS_OVERLAY
+     snprintf(p, sizeof p, "%s/pso", res); if (!stat(p, &st)) setenv("DM_PSO_BUNDLE", p, 0);   // the bases of every shader pair: the first start builds none
+     if (*lang) setenv("DM_LANG", lang, 0);
+     setenv("DM_WINDOW", "1", 0); setenv("DM_AUDIO", "1", 0);
+diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
+index 96b61191..7b6bcaf6 100755
+--- a/dm/mac/pack_app.py
++++ b/dm/mac/pack_app.py
+@@ -275,7 +275,7 @@ def pack(a):
+     except (OSError, ValueError): previous = None
+     try:
+         a = argparse.Namespace(**vars(a))
+-        for name in ('out', 'host', 'patched', 'romfs', 'msl', 'tables', 'font', 'aoc', 'pso', 'pso_pairs', 'env_file', 'settings', 'icon', 'html'):
++        for name in ('out', 'host', 'patched', 'romfs', 'msl', 'tables', 'font', 'aoc', 'pso', 'pso_pairs', 'env_file', 'settings', 'icon', 'html', 'game_mods'):
+             if getattr(a, name): setattr(a, name, str(Path(getattr(a, name)).resolve()))
+         mods, msls, pso, tables, pairs, fonts, files = selected_inputs(a)
+         # --program: the other programs of a game of several programs (index, rewritten modules, RomFS, shader libraries, tables, offline pages; tab-separated), which go in beside the first's as one app
+@@ -295,7 +295,7 @@ def pack(a):
+         minos = min_os(a.host)
+         sources = [Path(__file__).resolve(), HERE / 'launcher.c', HERE.parent / 'host/romfs_image.h', HERE.parent / 'host/input_map.h', HERE.parent / 'host/dm_input.h', HERE.parent / 'host/save_sync.c', HERE.parent / 'host/save_sync.h', HERE.parent / 'tools/romfs.py'] + swift_sources()
+         inputs = {'options': vars(a), 'files': [(str(p), p.stat().st_mode, digest(p), os.readlink(p) if p.is_symlink() else None) for p in files + sources],
+-                  'trees': [(p, inventory(Path(p))) for p in (a.romfs, a.romfs and f'{a.romfs}.id', a.aoc, a.html, *(str(x[1]) for x in programs), *(str(x[3]) for x in programs)) if p and Path(p).exists()],
++                  'trees': [(p, inventory(Path(p))) for p in (a.romfs, a.romfs and f'{a.romfs}.id', a.aoc, a.html, a.game_mods, str(Path(a.patched) / 'codemods'), *(str(x[1]) for x in programs), *(str(x[3]) for x in programs)) if p and Path(p).exists()],
+                   'tools': [[str(c), c.stat().st_mode, c.stat().st_size, c.stat().st_mtime_ns, c.stat().st_ctime_ns, run([c, '--version']).strip()] for c in (clang, swiftc)] + [
+                             str(sdk), run(['xcrun', '--sdk', 'macosx', '--show-sdk-version']).strip(),
+                             str(codesign), codesign.stat().st_mode, digest(codesign), minos]}
+@@ -324,6 +324,8 @@ def pack(a):
+     build_launcher(mac / EXE, minos, clang, swiftc, sdk)
+     shutil.copy(a.host, mac / 'dmhost')   # data and mode, not the build's extended attributes (copy2 would carry them into the app)
+     copy(mods, dm, clone['mods'])
++    if (Path(a.patched) / 'codemods').is_dir(): copy([Path(a.patched) / 'codemods'], dm / 'codemods', clone['mods'])   # modules rewritten with code patches
++    if a.game_mods: copy([Path(a.game_mods)], dm / 'mods', can_clone(Path(a.game_mods), res))   # dm_code.tsv switch metadata, never RomFS
+     if tables: copy(tables, dm, False)
+     if pairs: shutil.copyfile(pairs, dm / 'pso_pairs.tsv')   # the split's copy, for a profile without the table
+     if fonts: copy(fonts, dm / 'font', False)
+@@ -385,6 +387,7 @@ def parse(argv):
+     ap.add_argument('--tables', required=True, help='the game profile folder (shader_map.tsv and the tables beside it)')
+     ap.add_argument('--font', required=True, help='the folder of the shared-font stand-ins (nintendo_ext.ttf)')
+     ap.add_argument('--aoc', help='the DLC RomFS images or folders by index')
++    ap.add_argument('--game-mods', help='code-mod switch metadata staged by dm/tools/mods.py (Resources/dm/mods; no RomFS)')
+     ap.add_argument('--pso', help='the pipeline archive made offline for this Mac (pso_offline.py --platform macos output: <arch>.mtl4a, prebuilt.tsv)')
+     ap.add_argument('--pso-pairs', help='pso_pairs.tsv for a profile that has none (the shader split\'s copy)')
+     ap.add_argument('--html', help='the offline HTML pages (nx_extract --html), which go beside the RomFS')
+diff --git a/dm/tools/exefs_mods.py b/dm/tools/exefs_mods.py
+new file mode 100644
+index 00000000..013df7f0
+--- /dev/null
++++ b/dm/tools/exefs_mods.py
+@@ -0,0 +1,95 @@
++"""ExeFS code patches of mods, in the two formats emulators and Atmosphère load from a mod's exefs folder, read into (build ID, [(module offset, bytes)]).
++
++- IPSwitch text (.pchtxt): @nsobid-<build ID>, @flag offset_shift <n>, @enabled / @disabled blocks, @stop, // comments and "<offset> <hex bytes>" entries. An entry
++  plus the shift is an IPS offset, which counts the NSO's 0x100-byte header: the module offset is entry + shift - 0x100 (with the usual shift of 0x100, the entry).
++  @flag print_values and debug_info change only how IPSwitch shows the file and are ignored. Anything else (string entries, other flags) is an error, so a mod is
++  never applied half-understood.
++- IPS (.ips, named <build ID>.ips): "PATCH" records of a 3-byte offset and a 2-byte size (size 0: a run, 2-byte count and 1 byte) up to "EOF"; IPS32 ("IPS32",
++  4-byte offsets, up to "EEOF"). Offsets count the 0x100-byte NSO header, as above.
++
++patch_nso.py applies the files whose build ID is the module's (the first 16 bytes compared, as a shorter ID in a file name is the start of the full one) before it
++rewrites, so the rewriter handles a mod's code as the game's own (DM_EXEFS_PATCHES). scripts/build_ipa_from_nsp.py --mods collects the files from mod folders.
++"""
++import os
++import re
++import sys
++
++HEADER = 0x100   # the NSO header, which IPS offsets count
++
++
++class ModError(Exception):
++    pass
++
++
++def _bid(s):
++    s = s.strip().lower()
++    if not s or not re.fullmatch(r'[0-9a-f]+', s): raise ModError(f'not a build ID: {s!r}')
++    return s[:32]
++
++
++def parse_pchtxt(path):
++    """(build ID, [(module offset, bytes)], [(line, entry)]) of an IPSwitch text file; entries in @disabled blocks are left out"""
++    bid, shift, on, out, lines = None, 0, False, [], []
++    with open(path, encoding='utf-8-sig') as f:
++        for ln, raw in enumerate(f, 1):
++            line = raw.split('//', 1)[0].strip()
++            if not line or line.startswith('#'): continue   # IPSwitch packs also use full-line # comments
++            where = f'{path}:{ln}'
++            if line.startswith('@nsobid-'): bid = _bid(line[8:]); continue
++            if bid is None: raise ModError(f'{where}: entries before the @nsobid line')
++            if line.startswith('@flag'):
++                f_ = line.split()
++                if len(f_) >= 3 and f_[1] == 'offset_shift': shift = int(f_[2], 0)
++                elif f_[1:2] not in (['print_values'], ['debug_info']): raise ModError(f'{where}: unsupported flag: {line}')
++                continue
++            if line == '@enabled': on = True; continue
++            if line == '@disabled': on = False; continue
++            if line == '@stop': break
++            if line.startswith('@'): raise ModError(f'{where}: unsupported directive: {line}')
++            f_ = line.split()
++            if len(f_) != 2 or not re.fullmatch(r'[0-9a-fA-F]+', f_[0]) or not re.fullmatch(r'(?:[0-9a-fA-F]{2})+', f_[1]):
++                raise ModError(f'{where}: not an "<offset> <hex bytes>" entry: {line}')
++            if not on: continue
++            off = int(f_[0], 16) + shift - HEADER
++            if off < 0: raise ModError(f'{where}: offset {f_[0]} lies in the NSO header')
++            out.append((off, bytes.fromhex(f_[1]))); lines.append((ln, line))
++    if bid is None: raise ModError(f'{path}: no @nsobid line')
++    return bid, out, lines
++
++
++def parse_ips(path):
++    """(build ID, [(module offset, bytes)]) of an IPS or IPS32 file named <build ID>.ips"""
++    bid = _bid(os.path.splitext(os.path.basename(path))[0])
++    with open(path, 'rb') as f: data = f.read()
++    if data.startswith(b'IPS32'): pos, width, end = 5, 4, b'EEOF'
++    elif data.startswith(b'PATCH'): pos, width, end = 5, 3, b'EOF'
++    else: raise ModError(f'{path}: neither IPS ("PATCH") nor IPS32')
++    out = []
++    while True:
++        if data[pos:pos + len(end)] == end and pos + len(end) == len(data): break
++        if pos + width + 2 > len(data): raise ModError(f'{path}: cut off at byte {pos}')
++        off = int.from_bytes(data[pos:pos + width], 'big'); size = int.from_bytes(data[pos + width:pos + width + 2], 'big'); pos += width + 2
++        if size: chunk = data[pos:pos + size]; pos += size
++        else: n = int.from_bytes(data[pos:pos + 2], 'big'); chunk = data[pos + 2:pos + 3] * n; pos += 3
++        if len(chunk) != (size or len(chunk)) or not chunk: raise ModError(f'{path}: a record at byte {pos} is cut off')
++        if off < HEADER: raise ModError(f'{path}: a record at offset {off:#x} lies in the NSO header')
++        out.append((off - HEADER, chunk))
++    return bid, out
++
++
++def parse(path):
++    """(build ID, [(module offset, bytes)]) of a .pchtxt or .ips file"""
++    if path.lower().endswith('.pchtxt'): bid, out, _ = parse_pchtxt(path); return bid, out
++    if path.lower().endswith('.ips'): return parse_ips(path)
++    raise ModError(f'{path}: neither .pchtxt nor .ips')
++
++
++def matches(file_bid, module_bid):
++    """a file's build ID names the module: the file may give fewer digits than the module's 32 (it is then their start)"""
++    return module_bid.lower()[:len(file_bid)] == file_bid
++
++
++if __name__ == '__main__':   # exefs_mods.py <file>…: what each file patches
++    for p in sys.argv[1:]:
++        try: b, e = parse(p); print(f'{p}: build {b}, {len(e)} entries, {sum(len(x) for _, x in e)} bytes')
++        except ModError as x: sys.exit(f'[RED] {x}')
+diff --git a/dm/tools/mods.py b/dm/tools/mods.py
+new file mode 100644
+index 00000000..8443a807
+--- /dev/null
++++ b/dm/tools/mods.py
+@@ -0,0 +1,93 @@
++"""Code mods for a Mac app build (scripts/build_ipa_from_nsp.py --mods): find their ExeFS patches and stage the switch metadata.
++
++A mod is a folder with exefs/ (code patches, .pchtxt or .ips: exefs_mods.py), optionally beside romfs/. A folder given may be a mod itself, a folder of mods,
++an exefs_patches/<mod> folder of patch files, or one of the Atmosphère, Ryujinx and yuzu trees downloads come in. Replacement modules are not supported.
++RomFS files stay the front end's DM_ROMFS_OVERLAY business: only dm_code.tsv goes into the app, so its loader can switch the rewritten code without applying
++those files a second time.
++"""
++import os
++import shutil
++from pathlib import Path
++
++PATCH_EXT = ('.pchtxt', '.ips')
++
++
++class Mod:
++    def __init__(self, name, folder, exefs=None):
++        self.name, self.dir = name, Path(folder)
++        self.romfs = self.dir / 'romfs' if (self.dir / 'romfs').is_dir() and any(_files(self.dir / 'romfs')) else None
++        ex = Path(exefs) if exefs else self.dir / 'exefs'
++        files = sorted(_files(ex)) if ex.is_dir() else []
++        self.patches = [p for p in files if p.suffix.lower() in PATCH_EXT]
++        self.other = [p for p in files if p.suffix.lower() not in PATCH_EXT]
++
++    def __repr__(self): return f'Mod({self.name!r}, {self.dir})'
++
++
++def _files(d):
++    for root, dirs, names in os.walk(d):
++        dirs[:] = [x for x in dirs if not x.startswith('.')]
++        for n in names:
++            if not n.startswith('.'): yield Path(root) / n
++
++
++def _child_ci(d, name):
++    try: return next((p for p in Path(d).iterdir() if p.name.lower() == name.lower() and p.is_dir()), None)
++    except OSError: return None
++
++
++def _is_mod(d): return (Path(d) / 'romfs').is_dir() or (Path(d) / 'exefs').is_dir()
++
++
++def _patch_folder(d): return Path(d).is_dir() and any(p.suffix.lower() in PATCH_EXT for p in Path(d).iterdir() if p.is_file())
++
++
++def _subdirs(d): return sorted((p for p in Path(d).iterdir() if p.is_dir() and not p.name.startswith('.')), key=lambda p: p.name)
++
++
++def _tree(name, base, tid):
++    """the mods of the trees under base; [] when it has none"""
++    out = []
++    atm = _child_ci(base, 'atmosphere')
++    t = _child_ci(_child_ci(atm, 'contents'), tid) if atm and _child_ci(atm, 'contents') else None
++    if t and _is_mod(t): out.append(Mod(name, t))
++    ep = _child_ci(atm, 'exefs_patches') if atm else _child_ci(base, 'exefs_patches')
++    if ep: out += [Mod(s.name, s, exefs=s) for s in _subdirs(ep) if _patch_folder(s)]
++    c = _child_ci(base, 'contents')
++    for t in filter(None, (_child_ci(c, tid) if c else None, _child_ci(base, tid))):
++        out += [Mod(name, t)] if _is_mod(t) else [Mod(s.name, s) for s in _subdirs(t) if _is_mod(s)]
++    return out
++
++
++def find(folder, tid, _depth=0):
++    """the mods in a folder given to --mods (see the module's note), in name order within a folder of mods"""
++    p = Path(folder).expanduser()
++    if not p.is_dir(): raise FileNotFoundError(f'no mod folder {p}')
++    if _is_mod(p): return [Mod(p.name, p)]
++    if _patch_folder(p): return [Mod(p.name, p, exefs=p)]
++    got = _tree(p.name, p, tid)
++    if got or _depth: return got
++    return [m for s in _subdirs(p) for m in find(s, tid, 1)]
++
++
++def stage(mods, applied, out):
++    """write out/<name>/dm_code.tsv for each mod whose code patches went into the build, with no RomFS copy. Returns [(name, patch files applied)]"""
++    if out.exists(): shutil.rmtree(out)
++    out.mkdir(parents=True)
++    rows = []
++    for m in mods:
++        mine = [p for p in m.patches if str(p) in applied]
++        if not mine: continue
++        d = out / m.name; d.mkdir()
++        (d / 'dm_code.tsv').write_text('# code patches in the app\'s codemods copy of the modules (scripts/build_ipa_from_nsp.py --mods): on with the other code mods\n' + ''.join(f'{p.name}\n' for p in mine))
++        rows.append((m.name, len(mine)))
++    return rows
++
++
++def applied_files(patched):
++    """the patch files the rewriter applied to any module in the patched folder (<module>.mods.tsv)"""
++    out = set()
++    for t in Path(patched).glob('*.mods.tsv'):
++        for ln in t.read_text(encoding='utf-8').splitlines():
++            if ln and not ln.startswith('#'): out.add(ln.split('\t')[3])
++    return out
+diff --git a/dm/tools/patch_nso.py b/dm/tools/patch_nso.py
+index 0a04a1fb..72287cf8 100644
+--- a/dm/tools/patch_nso.py
++++ b/dm/tools/patch_nso.py
+@@ -150,6 +150,29 @@ for off, ob, nb, why in cuts:
+     ob, nb = bytes.fromhex(ob), bytes.fromhex(nb)
+     assert len(ob) == len(nb) and IMG[off:off + len(ob)] == ob, f'cut original bytes mismatch {off:#x}: {bytes(IMG[off:off + len(ob)]).hex()}'
+     IMG[off:off + len(nb)] = nb
++# Mods' code patches: DM_EXEFS_PATCHES=<file>[:<file>…] names .pchtxt and .ips files (exefs_mods.py; build_ipa_from_nsp.py --mods collects them from mod folders). A file applies to
++# the module its build ID names and is passed over by the others; its bytes go in after the registered cuts, before the rewrite, so the rewriter handles the mod's code like
++# the game's own. A patch that lands on a cut, or outside the image, stops the rewrite. What was applied: <name>.mods.tsv (offset, bytes before, bytes after, file)
++mod_applied, mod_owner, cut_spans = [], {}, [(off, off + len(bytes.fromhex(nb))) for off, _, nb, _ in cuts]
++for path in filter(None, os.environ.get('DM_EXEFS_PATCHES', '').split(':')):
++    import exefs_mods
++    try: bid, entries = exefs_mods.parse(path)
++    except exefs_mods.ModError as e: sys.exit(f'[RED] mod code patch: {e}')
++    if not exefs_mods.matches(bid, BUILD_ID): continue
++    for off, nb in entries:
++        if off + len(nb) > len(IMG): sys.exit(f'[RED] mod code patch {path}: {off:#x}+{len(nb)} lies outside {NAME} ({len(IMG):#x} bytes)')
++        hit = next(((a, b) for a, b in cut_spans if off < b and a < off + len(nb)), None)
++        if hit: sys.exit(f'[RED] mod code patch {path}: {off:#x}+{len(nb)} overlaps the registered cut at {hit[0]:#x} of {NAME}, which the host needs')
++        other = next((mod_owner[k] for k in range(off, off + len(nb)) if mod_owner.get(k, path) != path), None)
++        mod_owner.update((k, path) for k in range(off, off + len(nb)))
++        if other: sys.exit(f'[RED] mod code patches {other} and {path} both patch {NAME} at {off:#x}: two mods (or two versions of one) that cannot go together')
++        mod_applied.append((off, bytes(IMG[off:off + len(nb)]).hex(), nb.hex(), path)); IMG[off:off + len(nb)] = nb
++    print(f'{NAME}: mod code patch {path}: {len(entries)} entries applied')
++if mod_applied:
++    os.makedirs(outdir, exist_ok=True)
++    with open(os.path.join(outdir, NAME + '.mods.tsv'), 'w') as f:
++        f.write(f'# {NAME} {BUILD_ID}: mod code patches applied before the rewrite. offset, bytes before, bytes after, file\n')
++        for off, ob, nb, path in mod_applied: f.write(f'{off:#x}\t{ob}\t{nb}\t{path}\n')
+ # Key page indices are fixed; the key page content is written by the loader as "actual key number × 8".
+ KEYS = {'K18': 508, 'KTLS': 509, 'KTLR': 510, 'KGATE': 511}
+ KEY_INDEX = {k: i for i, k in enumerate(('K18', 'KTLS', 'KTLR', 'KGATE'))}
+diff --git a/dm/tools/tests/test_mods.py b/dm/tools/tests/test_mods.py
+new file mode 100644
+index 00000000..285761f2
+--- /dev/null
++++ b/dm/tools/tests/test_mods.py
+@@ -0,0 +1,133 @@
++"""Mods for a build: the code patch formats (exefs_mods.py) and finding and staging mods in the layouts downloads come in (mods.py); synthetic files only."""
++import importlib.util
++import struct
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++REPO = Path(__file__).resolve().parents[3]
++sys.path.insert(0, str(REPO / 'dm/tools'))
++
++
++def load(name):
++    spec = importlib.util.spec_from_file_location(name, REPO / f'dm/tools/{name}.py')
++    assert spec is not None and spec.loader is not None
++    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
++
++
++ex, mods = load('exefs_mods'), load('mods')
++TID = '01006F8002326000'
++BID = 'ff1d1c05670db6021c85b624a710b963'
++
++
++def write(root, rel, data: bytes | str = b'x'):
++    p = Path(root) / rel; p.parent.mkdir(parents=True, exist_ok=True)
++    p.write_bytes(data if isinstance(data, bytes) else data.encode()); return p
++
++
++class Pchtxt(unittest.TestCase):
++    def test_entries_shift_and_blocks(self):
++        with tempfile.TemporaryDirectory() as d:
++            p = write(d, 'a.pchtxt', f'@nsobid-{BID.upper()}\n@flag print_values\n@flag offset_shift 0x100\n\n# a pack comment\n// disabled first\n0000aa00 00000000\n'
++                                     '@enabled\n0000bb00 1f2003d5 // nop\n0000cc04 E0031F2A\n@disabled\n0000dd00 00\n@enabled\n@stop\n0000ee00 00\n')
++            bid, entries, lines = ex.parse_pchtxt(str(p))
++            self.assertEqual(bid, BID)
++            self.assertEqual(entries, [(0xbb00, bytes.fromhex('1f2003d5')), (0xcc04, bytes.fromhex('e0031f2a'))])   # shift 0x100 - header 0x100: the entry is the module offset
++            self.assertEqual([ln for ln, _ in lines], [9, 10])
++
++    def test_no_shift_counts_the_header(self):
++        with tempfile.TemporaryDirectory() as d:
++            p = write(d, 'a.pchtxt', f'@nsobid-{BID}\n@enabled\n00000200 00\n')
++            self.assertEqual(ex.parse_pchtxt(str(p))[1], [(0x100, b'\0')])
++
++    def test_errors(self):
++        bad = {'entries before the @nsobid': '@enabled\n0100 00\n', 'unsupported flag': f'@nsobid-{BID}\n@flag nonsense 1\n',
++               'not an "<offset> <hex bytes>"': f'@nsobid-{BID}\n@enabled\n0100 "text"\n', 'no @nsobid': '// nothing\n',
++               'in the NSO header': f'@nsobid-{BID}\n@enabled\n00000010 00\n', 'unsupported directive': f'@nsobid-{BID}\n@other\n'}
++        with tempfile.TemporaryDirectory() as d:
++            for i, (why, text) in enumerate(bad.items()):
++                with self.subTest(why), self.assertRaisesRegex(ex.ModError, why): ex.parse_pchtxt(str(write(d, f'{i}.pchtxt', text)))
++
++
++class Ips(unittest.TestCase):
++    def test_ips_records_and_runs(self):
++        body = b'PATCH' + (0x1000).to_bytes(3, 'big') + struct.pack('>H', 4) + b'\x1f\x20\x03\xd5' + (0x2000).to_bytes(3, 'big') + b'\0\0' + struct.pack('>H', 3) + b'\xaa' + b'EOF'
++        with tempfile.TemporaryDirectory() as d:
++            bid, entries = ex.parse(str(write(d, f'{BID.upper()}.ips', body)))
++            self.assertEqual(bid, BID)
++            self.assertEqual(entries, [(0xf00, b'\x1f\x20\x03\xd5'), (0x1f00, b'\xaa\xaa\xaa')])
++
++    def test_ips32_and_long_build_id(self):
++        body = b'IPS32' + struct.pack('>IH', 0x01000100, 2) + b'\x01\x02' + b'EEOF'
++        with tempfile.TemporaryDirectory() as d:
++            bid, entries = ex.parse(str(write(d, 'A226048605D3597F90CB1067D141CD36647B90CD.ips', body)))
++            self.assertEqual(bid, 'a226048605d3597f90cb1067d141cd36')   # the first 16 bytes
++            self.assertEqual(entries, [(0x01000000, b'\x01\x02')])
++
++    def test_bad_files(self):
++        with tempfile.TemporaryDirectory() as d:
++            for name, data, why in (('x.ips', b'PATCH', 'not a build ID'), (f'{BID}.ips', b'NOPE', 'neither IPS'), (f'{BID}.ips', b'PATCH\x00\x10', 'cut off'),
++                                    (f'{BID}.ips', b'PATCH\x00\x00\x10\x00\x01\x00EOF', 'NSO header')):
++                with self.subTest(why), self.assertRaisesRegex(ex.ModError, why): ex.parse(str(write(d, name, data)))
++
++    def test_matches(self):
++        self.assertTrue(ex.matches(BID[:16], BID)); self.assertTrue(ex.matches(BID, BID.upper())); self.assertFalse(ex.matches('00' + BID[2:], BID))
++
++
++class Finding(unittest.TestCase):
++    def setUp(self):
++        self.t = tempfile.TemporaryDirectory(); self.d = Path(self.t.name)
++
++    def tearDown(self): self.t.cleanup()
++
++    def names(self, folder): return [(m.name, len(m.patches), bool(m.romfs)) for m in mods.find(folder, TID)]
++
++    def test_a_mod_itself(self):
++        write(self.d, 'Speed/romfs/Pack/StaticParam.pack'); write(self.d, 'Speed/exefs/speedfix_main.pchtxt', f'@nsobid-{BID}\n')
++        self.assertEqual(self.names(self.d / 'Speed'), [('Speed', 1, True)])
++
++    def test_ryujinx_download(self):   # the 60 fps mod's ryujinx folder: three variants under contents/<title ID>/
++        for v in ('ACNH 45 FPS + SpeedFix', 'ACNH 60 FPS + SpeedFix'):
++            write(self.d, f'ryujinx/mods/contents/{TID}/{v}/romfs/Pack/StaticParam.pack'); write(self.d, f'ryujinx/mods/contents/{TID}/{v}/exefs/enabler_sdk.pchtxt')
++        self.assertEqual(self.names(self.d / 'ryujinx/mods'), [('ACNH 45 FPS + SpeedFix', 1, True), ('ACNH 60 FPS + SpeedFix', 1, True)])
++        self.assertEqual(len(self.names(self.d / 'ryujinx')), 2)   # the tree one level down (a folder of mods)
++        self.assertEqual(self.names(self.d), [])   # two levels down: not looked for
++
++    def test_atmosphere_tree(self):   # romfs under contents/<title ID>, code patches under exefs_patches/<mod>/<build ID>.ips (title ID folder in lower case)
++        write(self.d, f'Pack/atmosphere/contents/{TID.lower()}/romfs/a.bin'); write(self.d, f'Pack/atmosphere/exefs_patches/Fps/{BID}.ips', b'PATCHEOF')
++        self.assertEqual(self.names(self.d / 'Pack'), [('Pack', 0, True), ('Fps', 1, False)])
++        self.assertEqual(self.names(self.d), [('Pack', 0, True), ('Fps', 1, False)])   # a folder of mods: each subfolder looked into
++
++    def test_patch_folder_and_yuzu(self):
++        write(self.d, f'exefs_patches/Fps/{BID}.ips', b'PATCHEOF'); write(self.d, f'load/{TID}/Hd/romfs/a.bin')
++        self.assertEqual(self.names(self.d / 'exefs_patches/Fps'), [('Fps', 1, False)])
++        self.assertEqual(self.names(self.d / 'load'), [('Hd', 0, True)])
++
++    def test_unsupported_modules_and_other_games(self):
++        write(self.d, 'Exl/exefs/subsdk9'); write(self.d, 'Exl/exefs/main.npdm'); write(self.d, 'Other/atmosphere/contents/0100000000010000/romfs/a')
++        m = mods.find(self.d / 'Exl', TID)[0]
++        self.assertEqual([p.name for p in m.other], ['main.npdm', 'subsdk9'])
++        self.assertEqual(mods.find(self.d / 'Other', TID), [])
++        with self.assertRaises(FileNotFoundError): mods.find(self.d / 'missing', TID)
++
++    def test_stage_keeps_romfs_out(self):
++        a = write(self.d, 'src/Speed/exefs/speedfix_main.pchtxt'); write(self.d, 'src/Speed/romfs/Pack/x.pack', 'p'); write(self.d, 'src/Look/romfs/a/b.bin', 'b')
++        write(self.d, 'src/Unused/exefs/old.pchtxt')
++        found = mods.find(self.d / 'src', TID)
++        out = self.d / 'out'; write(out, 'stale/romfs/x')
++        rows = mods.stage(found, {str(a)}, out)
++        self.assertEqual(rows, [('Speed', 1)])
++        self.assertFalse((out / 'stale').exists())
++        self.assertTrue((out / 'Speed/dm_code.tsv').read_text().endswith('speedfix_main.pchtxt\n'))
++        self.assertFalse((out / 'Speed/romfs').exists(), "the front end's DM_ROMFS_OVERLAY remains the only RomFS application")
++        self.assertFalse((out / 'Look').exists())
++        self.assertFalse((out / 'Unused').exists())
++
++    def test_applied_files(self):
++        write(self.d, 'p/main.mods.tsv', '# header\n0x10\t00\t11\t/m/a.pchtxt\n0x20\t00\t11\t/m/b.ips\n'); write(self.d, 'p/sdk.mods.tsv', '0x0\t00\t11\t/m/c.pchtxt\n')
++        self.assertEqual(mods.applied_files(self.d / 'p'), {'/m/a.pchtxt', '/m/b.ips', '/m/c.pchtxt'})
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/docs/development.md b/docs/development.md
+index 73cea7ea..a11ef8eb 100644
+--- a/docs/development.md
++++ b/docs/development.md
+@@ -123,6 +123,12 @@ python3 scripts/cheat_anchor.py check FFCC.cheats.toml --nso <ExeFS/main>    # t
+   - `import` refuses a file named after another build unless `--assume-build`; its unanchored cheats then stay bound to the file's own build. A file named after the game's title ID names no build, so it is taken as written for the NSO's build. `import` also counts the writes into the code that put back the word already there (restore entries): evidence that the file belongs to the NSO's build.
+ - **Not yet:** `min` / `max` and never-decrease through pointer chains, anchors by IL2CPP names. Validation on FFCC and 13 Sentinels: [Cheats carried across game updates](reference/rewriter.md#cheats-carried-across-game-updates).
+ 
++## Code mods on the Mac
++
++`--mods <folder>` (`MODS` in Spyder), repeated or comma-separated, builds ExeFS code patches into `--platform mac` and `mac-app`. A folder is a mod (`exefs/` of `.pchtxt` or `.ips`, IPS32 included), a folder of mods, or an Atmosphère, Ryujinx or yuzu tree (`dm/tools/mods.py`). Files whose build ID does not match are skipped. A mod with no matching patch, replacement code modules, a patch over a registered cut or outside the image, and two patch files that overlap all stop the build (`dm/tools/exefs_mods.py`, `patch_nso.py`).
++
++The modules are rewritten normally and again with every patch in `DM_EXEFS_PATCHES`, after registered cuts and before instruction rewriting. Changed modules go into `patched_<version>/codemods`. The Mac loader takes that copy only while every staged code mod is on, so the original remains available. `DM_MODS_OFF=<name>[/<name>…]` switches them together. The build stages only each mod's `dm_code.tsv` in `<build folder>/mods`, packed as `Resources/dm/mods` by `dm/mac/pack_app.py`. It deliberately stages no RomFS: NX2Apple's existing `DM_ROMFS_OVERLAY` remains the only RomFS path. This carry does not include PR #883's run-time RomFS scanner, mod `env.txt`, iOS embedding or per-mod independent code switches.
++
+ ## Guest memory SVCs
+ 
+ `dm/host/hle_svc.c` serializes heap resizing, physical map/unmap, stack
+diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
+index 33ba1115..e90d74f6 100644
+--- a/docs/env_switches.tsv
++++ b/docs/env_switches.tsv
+@@ -36,6 +36,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into
+ DM_ENV_FILE_KEYS	switch	Set by the iOS app and the Mac launcher at launch to the space-separated names an env file set; the settings screen keeps those values and shows them greyed out
+ DM_ENV_LAUNCH_KEYS	switch	Set at launch by the Mac launcher (the launcher settings already in the environment) and the iOS app (every DM_* variable already in it) to the space-separated names; the settings screen keeps those values and shows them greyed out
+ DM_EXEC_OUT	path	File `oe::ExecuteProgram` records the next program and its parameters in, then the app ends (the iOS app of a game of several programs sets it to `Documents/program.bin`)
++DM_EXEFS_PATCHES	path	`=<file>[:<file>…]`: code patch files (`.pchtxt`, `.ips`) the rewriter applies to the module whose build ID each names (`patch_nso.py`; the NSP script's `--mods` sets it)
+ DM_EXPERIMENTAL_BUILDER	switch	`1` makes the NSP script run the extraction and the shader split through nxbuild's binaries beside `NXB_BIN` (the path of its `nxb` binary) where nxbuild supports the case, with the same outputs; any other case, an unsupported stage or an output that fails the checks runs the standard way (the Mac launcher's Use experimental builder setting)
+ DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
+ DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
+@@ -107,6 +108,8 @@ DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second write
+ DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
+ DM_METAL_CAPTURE	diagnostic	`=1` makes `build_ipa.sh` produce a build that can write GPU frame captures (`MetalCaptureEnabled` in `Info.plist`), for `DM_GPU_CAPTURE`
+ DM_METAL_HUD	player	`1` shows Apple's Metal performance HUD over the game (frame rate, frame and GPU time, memory)
++DM_MODS	path	Mac: `=<dir>[:<dir>…]` folders of staged code-mod `dm_code.tsv` metadata (default `<DM_ROOT>/mods`; a Mac app sets `Resources/dm/mods`)
++DM_MODS_OFF	player	Mac: `=<name>[/<name>…]` switches built-in code mods off together; the loader then uses the original modules
+ DM_MOTION	switch	`0` ignores live motion: every six-axis sensor lies flat as before (a shake still plays), and neither controllers' motion sensors nor the phone's device motion are switched on (`hle_hid.c`, `motion_apple.h`, `DmGamepad.m`); the NSP script's `--no-motion` (`MOTION = False`) builds it in
+ DM_MOTION_ACC_SIGN	switch	`-1` flips only GameController's acceleration, for a source that reports the specific force (+1 G up at rest) instead of the gravity direction (`motion_fusion.h`); phone and raw HID samples are already in the Switch frame
+ DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to the Switch's, a signed permutation applied to acceleration and rotation alike, for a controller whose axes differ (default `x,y,z`; phone and raw HID samples are already in the Switch frame)
+diff --git a/docs/playing.md b/docs/playing.md
+index 97879c90..daac476b 100644
+--- a/docs/playing.md
++++ b/docs/playing.md
+@@ -34,6 +34,10 @@ Switch Pro Controller gyro on the Mac still needs the HID support being develope
+ 
+ English by default. Pick another when packing with `--language` (`-l`), by code or by name: `-l ja`, `-l zh-Hans`, `-l French` (`LANGUAGE` in Spyder). It must be one the game has; the script prints the game's languages and stops on one it lacks. To change it without rebuilding, pick another on the settings screen.
+ 
++## Code mods on the Mac
++
++When packing with `--platform mac` or `mac-app`, `--mods <folder>` builds ExeFS `.pchtxt`, IPS and IPS32 patches for this game version into the app. Code mods share one patched copy of the modules and switch on or off together through `DM_MODS_OFF`. Adding, removing or changing a code mod requires packing again. RomFS replacement files are not packed by this option and remain the front end's overlay. Replacement code modules and iOS code mods are not supported by this carry.
++
+ ## Settings in a file
+ 
+ Lines like `DM_OPMODE=0` (handheld mode: lower resolution, higher frame rate) in `Documents/env.txt` win over the settings screen, which then shows them greyed out ([the full list](settings.md#settings-in-a-file)). `DM_FPS_TARGET=30` keeps Breath of the Wild, Tears of the Kingdom, Octopath Traveler 0 and Octopath Traveler II at their original 30 fps, which saves battery; `DM_PRESENT_INTERVAL=game` does the same for Monster Train 2. `DM_SHOW_FPS=1` shows the frame rate at the top left (`--show-fps` when packing turns it on from the start). `DM_LAUNCHER=0` skips the settings screen.
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 71dc95dd..020221fe 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -67,6 +67,7 @@ LANGUAGE = ''                           # game language, a code or a name: 'ja',
+                                         #   DM_LANG=<code> in the app's Documents/env.txt changes it without a rebuild
+ KEEP_EXTRACTED = True                   # keep the extracted game files after the IPA is built (saves extraction next time; as big as the game files); False deletes them
+ DM_ENV_FILE = ''                        # optional: environment switches for a diagnostic build (one KEY=VALUE per line)
++MODS = []                               # Mac builds: folders of code mods (exefs/ .pchtxt or .ips); RomFS remains the front end's DM_ROMFS_OVERLAY
+ SEEN_SHADERS = False                    # PLATFORM 'mac' / 'mac-app': build only the shaders the profile's playtests used (shader_seen.tsv) and those the last runs' logs reported missing, not the whole map; areas the list does not cover draw without the rest until this runs again
+ PSO_GPUS = ''                           # NVN games: GPU architectures the app gets the shader pairs' pipeline bases for, made on this Mac (metal-tt, comma-separated: 'g18p' = A19 / A19 Pro of the iPhone 17 family;
+                                         #   another device's name is in its log when the app has none for it), so the device does not build them on its first start; each adds about 650 MB to the app (Breath of the Wild) and minutes to a first build; 'none' = no archive;
+@@ -1701,7 +1702,8 @@ def rewrite(py, repo, exe_dir, out, env, logs, g, provisional=False):
+     try: own = [l for l in (repo / 'dm/games' / Path(env.get('DM_GAME') or '-').name / 'game.tsv').read_text(encoding='utf-8').splitlines() if l.startswith(('build\t', 'snowdrop_pools\t'))]
+     except OSError: own = []
+     key = fingerprint(('files', [repo / 'dm/tools' / f for f in ('patch_nso.py', 'nso.py', 'nso_code.py', 'nso_asm.py', 'nso_match.py', 'ue_cvar.py', 'ue_malloc.py', 'ue_region.py', 'ue_ring.py', 'snowdrop_pools.py', 'loader_census.py')] + patch_files(repo, exe_dir, mods, env.get('DM_GAME')) + list(src.values()) + ([manifest] if manifest.is_file() else [])), names, capstone.__version__,
+-                      {k: env.get(k) for k in ('DM_PATCH_FRONT', 'DM_GAME')}, own)
++                      {k: env.get(k) for k in ('DM_PATCH_FRONT', 'DM_GAME', 'DM_EXEFS_PATCHES')}, own,
++                      ('files', [Path(p) for p in (env.get('DM_EXEFS_PATCHES') or '').split(':') if p] + [repo / 'dm/tools/exefs_mods.py']))
+     if all((out / f'{m}.patched.bin').is_file() for m in names) and reused(kf, key) is not None:
+         PROG.end(f'{", ".join(mods)}{f" and {len(nros)} NROs" if nros else ""}, reused (inputs unchanged)')
+         return capture_nro(py, repo, exe_dir, out, nro_dir, env, logs, g, provisional)
+@@ -3023,7 +3025,7 @@ def mac_app_name(name):   # the app's file name: the game name with the characte
+     return re.sub(r'\s*[:/]\s*', ' - ', name).strip(' .-') or 'nxnative'
+ 
+ 
+-def mac_app(py, repo, out, app, work, game, patched, host, font, msl, aoc, gfx, lang, g, name, version, bundle_id, icon, sign, env, logs, env_file='', gpus='', programs=None, control=None):
++def mac_app(py, repo, out, app, work, game, patched, host, font, msl, aoc, gfx, lang, g, name, version, bundle_id, icon, sign, env, logs, env_file='', gpus='', programs=None, control=None, mods_dir=None):
+     """The last stage of PLATFORM 'mac-app': pack the Mac app (dm/mac/pack_app.py) from what a Mac-only build made: the Mac host and font (mac_host), the packed version's RomFS and rewritten
+     modules, the Mac shader libraries (msl: <shader>/cache, whose b-<chain> goes in, or a Vulkan or GL game's <shader>, whose vk / gl goes in), the DLC, the profile's tables (with the shader pairs
+     the pipeline prebuild reads), the pipeline archive made offline for this Mac (mac_pso; gpus: --gpu / PSO_GPUS), the launcher settings and an environment file.
+@@ -3040,7 +3042,7 @@ def mac_app(py, repo, out, app, work, game, patched, host, font, msl, aoc, gfx,
+     split_pairs = work / 'shader/pso_pairs.tsv'   # the split's copy of pso_pairs.tsv, for a profile without the table (as mac_run's DM_PSO_PAIRS)
+     for opt, v in (('--version', version), ('--category', g.get('app_category')), ('--marker', g.get('romfs_marker')), ('--aoc', aoc), ('--icon', icon),
+                    ('--pso', pso), ('--pso-pairs', split_pairs if gfx == 'nvn' and not g.table('pso_pairs.tsv').is_file() and split_pairs.is_file() else None),
+-                   ('--env-file', Path(os.path.expanduser(env_file)).resolve() if env_file else None), ('--settings', settings)):
++                   ('--env-file', Path(os.path.expanduser(env_file)).resolve() if env_file else None), ('--settings', settings), ('--game-mods', mods_dir)):
+         if v: cmd += [opt, v]
+     for n, r in (programs or {}).items(): cmd += ['--program', f'{n}\t{r["patched"]}\t{r["romfs"]}\t{r["msl"]}\t{r["tables"]}\t{r["html"]}']
+     if (game / 'html').is_dir(): cmd += ['--html', game / 'html']
+@@ -3054,6 +3056,62 @@ def mac_app(py, repo, out, app, work, game, patched, host, font, msl, aoc, gfx,
+     PROG.end(f'{out.name}, ' + ('reused (inputs unchanged)' if unchanged else amount(tree_size(out)[1], 'B')))
+ 
+ 
++def mod_folders(args):   # --mods (repeatable, comma-separated) or the MODS setting
++    got = [x.strip() for v in (getattr(args, 'mods', None) or []) for x in v.split(',') if x.strip()] or [str(x).strip() for x in (MODS.split(',') if isinstance(MODS, str) else MODS) if str(x).strip()]
++    return [Path(os.path.expanduser(x)).resolve() for x in got]
++
++
++def prepare_mods(repo, folders, app, env):
++    """Find code mods before the rewrite. Their patch files go to patch_nso.py in DM_EXEFS_PATCHES; replacement modules are not supported."""
++    if not folders: return []
++    sys.path.insert(0, str(repo / 'dm/tools')); import mods as modlib
++    found = []
++    for f in folders:
++        try: got = modlib.find(f, f'{app:016X}')
++        except FileNotFoundError as e: raise BuildError(f'--mods: {e}') from None
++        got = [m for m in got if m.patches or m.other]   # an Atmosphère tree's RomFS-only half stays with the front end
++        if not got: raise BuildError(f'--mods: no code mod in {f} (expected exefs/ .pchtxt or .ips for title {app:016X})')
++        found += got
++    names = [m.name for m in found]
++    for n in names:
++        if names.count(n) > 1: raise BuildError(f'--mods: two mods named {n!r}: {", ".join(str(m.dir) for m in found if m.name == n)}')
++        if ':' in n: raise BuildError(f'--mods: the mod name {n!r} has a ":", which separates code patch paths: rename its folder')
++    for m in found:
++        if m.other: raise BuildError(f'--mods: {m.name} replaces code modules ({", ".join(p.name for p in m.other[:4])}): only code patches (.pchtxt, .ips) are supported')
++        if not m.patches: raise BuildError(f'--mods: {m.name} has no code patches (.pchtxt, .ips); leave RomFS-only mods to the front end')
++        say(f'mod: {m.name} ({m.dir}): {len(m.patches)} code patch files')
++    return found
++
++
++def rewrite_code_mods(py, repo, exe_dir, patched, env, logs, g, found, provisional):
++    """Rewrite changed modules a second time with DM_EXEFS_PATCHES, then copy those modules into <patched>/codemods for the Mac loader."""
++    out, dst = patched.with_name(patched.name + '_codemods'), patched / 'codemods'
++    rmtree(dst)
++    patches = [str(p) for m in found for p in m.patches]
++    if not patches: rmtree(out); return out
++    PROG.add(1); rewrite(py, repo, exe_dir, out, dict(env, DM_EXEFS_PATCHES=':'.join(patches)), logs, g, provisional)
++    changed = sorted(t.name.removesuffix('.mods.tsv') for t in out.glob('*.mods.tsv'))
++    dst.mkdir()
++    for name in changed:
++        for f in out.glob(f'{name}.*'):
++            if subprocess.run(['cp', '-c', str(f), str(dst / f.name)], capture_output=True).returncode: shutil.copy2(f, dst / f.name)
++    say(f'mods: code patches in a second copy of {", ".join(changed) or "no module"} ({dst}), loaded while all code mods are on')
++    return out
++
++
++def finish_mods(repo, found, patched, work):
++    """Stop when a code mod fits no module, then stage only its dm_code.tsv switch metadata, never its RomFS."""
++    out = work / 'mods'
++    if not found: rmtree(out); return None
++    import mods as modlib
++    applied = modlib.applied_files(patched.with_name(patched.name + '_codemods'))
++    for m in found:
++        if not any(str(p) in applied for p in m.patches):
++            raise BuildError(f'--mods: none of {m.name}\'s code patches fit this version of the game ({", ".join(p.name for p in m.patches[:4])}{"…" if len(m.patches) > 4 else ""}): it is made for another version')
++    for name, ncode in modlib.stage(found, applied, out): say(f'mod: {name}: code patches from {ncode} files, switched with the other code mods')
++    return out
++
++
+ def find_repo(here):   # this file lives in the repository's scripts/; walk up to the level that has dm/tools/nx_extract/Program.cs
+     for d in here.parents:
+         if (d / 'dm/tools/nx_extract/Program.cs').exists(): return d
+@@ -3093,6 +3151,8 @@ def parse_args(argv):
+     ap.add_argument('--keep-extracted', action=argparse.BooleanOptionalAction, help='keep the extracted game files after the IPA is built, for the next build (default: the KEEP_EXTRACTED setting, on)')
+     ap.add_argument('--work-dir', help='the game\'s build folder, used as it is (default: the WORK_DIR setting, else <title ID>_build in the NSP folder); the extracted files, shader cache and temporary files live there, and the IPA or Mac app defaults to the folder holding it')
+     ap.add_argument('--env-file', help='environment switches for a diagnostic build (one KEY=VALUE per line)')
++    ap.add_argument('--mods', action='append', metavar='FOLDER', help='--platform mac / mac-app: code mods to build in, a mod folder (exefs/ .pchtxt or .ips) or a folder of mods; repeat it or separate folders with commas. '
++                    'The app carries original and patched modules, switched together through DM_MODS_OFF. RomFS is not staged: the front end keeps applying it through DM_ROMFS_OVERLAY')
+     ap.add_argument('--gpu', help='NVN games: GPU architectures the app gets its pipeline archive for, made on this Mac with metal-tt, comma-separated: g18p (A19 / A19 Pro), or the name a device\'s log gives when the app has no archive for its GPU; '
+                     'none = no archive, the device builds the bases on its first start (default: the PSO_GPUS setting; when that is empty, a profile with pso_mtl4 on uses its pso_gpu key or g18p, and other profiles use none). '
+                     'With --platform mac-app: the Mac app\'s archive, by default for this Mac\'s GPU (none: the app builds the bases on its first start)')
+@@ -3198,6 +3258,8 @@ def main(args=None):
+     if platform not in ('ios', 'mac', 'mac-app'): raise BuildError(f'PLATFORM / --platform must be ios, mac or mac-app: {platform}')
+     mac = platform in ('mac', 'mac-app')   # the Mac's shaders and host only: no iOS shaders, Xcode project or IPA (mac_run prints the command; mac-app packs a Mac app, mac_app)
+     mac_pack = platform == 'mac-app'
++    mod_roots = mod_folders(args)
++    if mod_roots and not mac: raise BuildError('--mods builds switchable code mods for --platform mac / mac-app only in this carry; iOS embedding is not included')
+     seen_shaders = SEEN_SHADERS if args.seen_shaders is None else args.seen_shaders
+     if seen_shaders and not mac: raise BuildError('--seen-shaders / SEEN_SHADERS builds a partial library of Mac shaders: it needs --platform mac or mac-app')
+     if args.mac_sign and not mac_pack: raise BuildError('--mac-sign signs the Mac app: it needs --platform mac-app')
+@@ -3434,7 +3496,10 @@ def main(args=None):
+         + (f'; the game\'s languages: {" ".join(have)}' if have else '; the control data lists no languages (not checked)') + (' (DM_LANG=<code> in the run command changes it)' if mac else ' (DM_LANG=<code> in the app\'s Documents/env.txt changes it)'))
+ 
+     patched = work / f'patched_{pkg_ver}'
++    game_mods = prepare_mods(repo, mod_roots, app, env)
+     g = rewrite(py, repo, game / 'ExeFS', patched, env, logs, g, provisional)
++    rewrite_code_mods(py, repo, game / 'ExeFS', patched, env, logs, g, game_mods, provisional)
++    mods_dir = finish_mods(repo, game_mods, patched, work)
+     if nd := captured_nros(patched): env = dict(env, DM_NRO_DIR=str(nd))
+     chain_header(py, repo, env, logs)   # before any host is built
+     if provisional or derived:   # the keys that need the rewritten modules, then (provisional) the heap check (both only change keys the host is built with, not the rewrite or the shader steps)
+@@ -3488,7 +3553,7 @@ def main(args=None):
+         programs = other_programs(args, g)
+         if not icon: say(('no game icon: the NUP carries none' if nup else 'no game icon: a dump folder has no control data') + '; the app\'s icon will be blank' if dump else '[RED] no game icon in the extraction (an older extraction did not save it: delete extract/ and run again); the app\'s icon will be blank')
+         mac_app(py, repo, out_ipa, app, work, game, patched, host, font, ios, aoc, gfx, lang, g, app_name, app_version, bundle_id, icon, args.mac_sign or MAC_SIGN, env, logs, env_file,
+-                (args.gpu or PSO_GPUS).strip(), programs, control)
++                (args.gpu or PSO_GPUS).strip(), programs, control, mods_dir)
+         rmtree(work / 'tmp')
+         say(f'done: {out_ipa} ({tree_size(out_ipa)[1] / 2**30:.1f} GB); '
+             f'open it from Finder. Its save is in ~/Library/Application Support/nxnative/{app:016X}/, its log in ~/Library/Logs/nxnative/{app:016X}.log')
