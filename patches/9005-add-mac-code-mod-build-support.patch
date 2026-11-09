@@ -39,7 +39,7 @@ Issue: seedds/nxnative#883
  create mode 100644 dm/tools/tests/test_mods.py
 
 diff --git a/README.md b/README.md
-index b4ec622f..41b75868 100644
+index 00576d6..1911eb5 100644
 --- a/README.md
 +++ b/README.md
 @@ -65,6 +65,8 @@ The IPA appears in the game's folder. The first build takes 30–60 minutes and
@@ -52,7 +52,7 @@ index b4ec622f..41b75868 100644
  
  Install the IPA on your iPhone or iPad with a sideloading tool such as AltStore, Sideloadly or LiveContainer. If your tool offers **Increased Memory Limit**, turn it on: the bigger games need it.
 diff --git a/dm/host/dm.h b/dm/host/dm.h
-index 985a305b..6fa0321c 100644
+index de73555..c4feaeb 100644
 --- a/dm/host/dm.h
 +++ b/dm/host/dm.h
 @@ -47,6 +47,7 @@ enum { STB_LOCAL = 0, STB_WEAK = 2, STV_DEFAULT = 0 };
@@ -65,7 +65,7 @@ index 985a305b..6fa0321c 100644
      uint64_t text_end, ro_off, data_off, key_page_off, key_page_size;   // From the rewriter fixups header
 diff --git a/dm/host/hle_mods.c b/dm/host/hle_mods.c
 new file mode 100644
-index 00000000..1c6c47c0
+index 0000000..1c6c47c
 --- /dev/null
 +++ b/dm/host/hle_mods.c
 @@ -0,0 +1,40 @@
@@ -110,7 +110,7 @@ index 00000000..1c6c47c0
 +    return any;
 +}
 diff --git a/dm/host/loader.c b/dm/host/loader.c
-index 8e623ece..ef23079e 100644
+index 99a910b..08d8e18 100644
 --- a/dm/host/loader.c
 +++ b/dm/host/loader.c
 @@ -1,6 +1,7 @@
@@ -121,7 +121,7 @@ index 8e623ece..ef23079e 100644
  #include <TargetConditionals.h>
  #include <fcntl.h>
  #include <errno.h>
-@@ -815,24 +816,31 @@ const char *dm_module_dir(void) { return g_module_dir; }
+@@ -829,24 +830,31 @@ const char *dm_module_dir(void) { return g_module_dir; }
  
  void load_modules(const char *dir, const char **names, int n) {
      strlcpy(g_module_dir, dir, sizeof g_module_dir);
@@ -158,7 +158,7 @@ index 8e623ece..ef23079e 100644
      }
 diff --git a/dm/host/mods.h b/dm/host/mods.h
 new file mode 100644
-index 00000000..40b60ae5
+index 0000000..40b60ae
 --- /dev/null
 +++ b/dm/host/mods.h
 @@ -0,0 +1,4 @@
@@ -167,7 +167,7 @@ index 00000000..40b60ae5
 +
 +int dm_mods_code_wanted(void);   // at least one built-in code mod, and none switched off through DM_MODS_OFF
 diff --git a/dm/host/tests/Makefile b/dm/host/tests/Makefile
-index 990d5295..3e4e5260 100644
+index 026abd9..637d5f0 100644
 --- a/dm/host/tests/Makefile
 +++ b/dm/host/tests/Makefile
 @@ -12,7 +12,7 @@ QUIET = $(if $(findstring -fsanitize,$(SAN)),,2>/dev/null)
@@ -179,7 +179,7 @@ index 990d5295..3e4e5260 100644
  	$(B)/t_language
  	$(B)/t_heap_size
  	$(B)/t_touch
-@@ -57,6 +57,7 @@ run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_to
+@@ -58,6 +58,7 @@ run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_to
  	$(B)/t_vi_history $(QUIET)
  	$(B)/t_nfc
  	$(B)/t_motion
@@ -187,9 +187,9 @@ index 990d5295..3e4e5260 100644
  	$(B)/t_motion_apple
  	$(B)/t_pad_apple
  	$(B)/t_home_quit
-@@ -78,8 +79,8 @@ run: $(B)/t_net_eventfd $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_to
- 	$(B)/t_controllers_mac
- run: $(B)/t_nro
+@@ -86,8 +87,8 @@ sync-wait: $(B)/t_sync_wait
+ 	$(B)/t_sync_wait
+ .PHONY: sync-wait
  run: $(B)/t_symbols
 -$(B)/t_symbols: t_symbols.c ../hle.c ../loader.c ../hle.h ../dm.h $(GAME_H) | $(B)
 -	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -Wno-deprecated-declarations -I.. $(GINC) -o $@ t_symbols.c ../hle_profile.c
@@ -198,7 +198,7 @@ index 990d5295..3e4e5260 100644
  .PHONY: symbols
  symbols: $(B)/t_symbols
  	$(B)/t_symbols
-@@ -101,8 +102,13 @@ $(B)/t_system_event: t_system_event.c ../hle_thread.c ../hle_sdk16.c ../hle_misc
+@@ -109,8 +110,13 @@ $(B)/t_system_event: t_system_event.c ../hle_thread.c ../hle_sdk16.c ../hle_misc
  .PHONY: system-event
  system-event: $(B)/t_system_event
  	$(B)/t_system_event
@@ -216,7 +216,7 @@ index 990d5295..3e4e5260 100644
  	$(B)/t_nro
 diff --git a/dm/host/tests/t_mods.c b/dm/host/tests/t_mods.c
 new file mode 100644
-index 00000000..75e0d696
+index 0000000..75e0d69
 --- /dev/null
 +++ b/dm/host/tests/t_mods.c
 @@ -0,0 +1,27 @@
@@ -248,7 +248,7 @@ index 00000000..75e0d696
 +    puts("mods ok"); return 0;
 +}
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index f36f73b9..0b33937b 100644
+index f36f73b..0b33937 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
 @@ -319,6 +319,7 @@ int main(int argc, char **argv) {
@@ -260,7 +260,7 @@ index f36f73b9..0b33937b 100644
      if (*lang) setenv("DM_LANG", lang, 0);
      setenv("DM_WINDOW", "1", 0); setenv("DM_AUDIO", "1", 0);
 diff --git a/dm/mac/pack_app.py b/dm/mac/pack_app.py
-index 96b61191..7b6bcaf6 100755
+index 96b6119..7b6bcaf 100755
 --- a/dm/mac/pack_app.py
 +++ b/dm/mac/pack_app.py
 @@ -275,7 +275,7 @@ def pack(a):
@@ -300,7 +300,7 @@ index 96b61191..7b6bcaf6 100755
      ap.add_argument('--html', help='the offline HTML pages (nx_extract --html), which go beside the RomFS')
 diff --git a/dm/tools/exefs_mods.py b/dm/tools/exefs_mods.py
 new file mode 100644
-index 00000000..013df7f0
+index 0000000..013df7f
 --- /dev/null
 +++ b/dm/tools/exefs_mods.py
 @@ -0,0 +1,95 @@
@@ -401,7 +401,7 @@ index 00000000..013df7f0
 +        except ModError as x: sys.exit(f'[RED] {x}')
 diff --git a/dm/tools/mods.py b/dm/tools/mods.py
 new file mode 100644
-index 00000000..8443a807
+index 0000000..8443a80
 --- /dev/null
 +++ b/dm/tools/mods.py
 @@ -0,0 +1,93 @@
@@ -499,10 +499,10 @@ index 00000000..8443a807
 +            if ln and not ln.startswith('#'): out.add(ln.split('\t')[3])
 +    return out
 diff --git a/dm/tools/patch_nso.py b/dm/tools/patch_nso.py
-index 0a04a1fb..72287cf8 100644
+index 8860c8f..20cc74c 100644
 --- a/dm/tools/patch_nso.py
 +++ b/dm/tools/patch_nso.py
-@@ -150,6 +150,29 @@ for off, ob, nb, why in cuts:
+@@ -160,6 +160,29 @@ for off, ob, nb, why in cuts:
      ob, nb = bytes.fromhex(ob), bytes.fromhex(nb)
      assert len(ob) == len(nb) and IMG[off:off + len(ob)] == ob, f'cut original bytes mismatch {off:#x}: {bytes(IMG[off:off + len(ob)]).hex()}'
      IMG[off:off + len(nb)] = nb
@@ -534,7 +534,7 @@ index 0a04a1fb..72287cf8 100644
  KEY_INDEX = {k: i for i, k in enumerate(('K18', 'KTLS', 'KTLR', 'KGATE'))}
 diff --git a/dm/tools/tests/test_mods.py b/dm/tools/tests/test_mods.py
 new file mode 100644
-index 00000000..285761f2
+index 0000000..285761f
 --- /dev/null
 +++ b/dm/tools/tests/test_mods.py
 @@ -0,0 +1,133 @@
@@ -672,7 +672,7 @@ index 00000000..285761f2
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/docs/development.md b/docs/development.md
-index 73cea7ea..a11ef8eb 100644
+index 8951c92..3d05cc4 100644
 --- a/docs/development.md
 +++ b/docs/development.md
 @@ -123,6 +123,12 @@ python3 scripts/cheat_anchor.py check FFCC.cheats.toml --nso <ExeFS/main>    # t
@@ -689,10 +689,10 @@ index 73cea7ea..a11ef8eb 100644
  
  `dm/host/hle_svc.c` serializes heap resizing, physical map/unmap, stack
 diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 33ba1115..e90d74f6 100644
+index c64e8d3..9cc62ce 100644
 --- a/docs/env_switches.tsv
 +++ b/docs/env_switches.tsv
-@@ -36,6 +36,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into
+@@ -37,6 +37,7 @@ DM_ENV_FILE	path	`=<file>` makes `build_ipa.sh` bake its `KEY=VALUE` lines into
  DM_ENV_FILE_KEYS	switch	Set by the iOS app and the Mac launcher at launch to the space-separated names an env file set; the settings screen keeps those values and shows them greyed out
  DM_ENV_LAUNCH_KEYS	switch	Set at launch by the Mac launcher (the launcher settings already in the environment) and the iOS app (every DM_* variable already in it) to the space-separated names; the settings screen keeps those values and shows them greyed out
  DM_EXEC_OUT	path	File `oe::ExecuteProgram` records the next program and its parameters in, then the app ends (the iOS app of a game of several programs sets it to `Documents/program.bin`)
@@ -700,7 +700,7 @@ index 33ba1115..e90d74f6 100644
  DM_EXPERIMENTAL_BUILDER	switch	`1` makes the NSP script run the extraction and the shader split through nxbuild's binaries beside `NXB_BIN` (the path of its `nxb` binary) where nxbuild supports the case, with the same outputs; any other case, an unsupported stage or an output that fails the checks runs the standard way (the Mac launcher's Use experimental builder setting)
  DM_FD_LOG	diagnostic	`=<seconds>` logs, every that many seconds, the number and kinds of file descriptors the process has open
  DM_FIXED_TIME	switch	`=<seconds>`: the user clock always returns that time and the host time zone is pinned to UTC, for deterministic comparison
-@@ -107,6 +108,8 @@ DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second write
+@@ -108,6 +109,8 @@ DM_MEMSTAT_DUMP	diagnostic	`=<seconds>`: with `DM_MEMSTAT`, at that second write
  DM_MEM_CAP_GB	switch	`=<GB>`: the memory watchdog exits when resident memory exceeds that many GB (default 24 on the Mac, none on iOS; `0` turns it off)
  DM_METAL_CAPTURE	diagnostic	`=1` makes `build_ipa.sh` produce a build that can write GPU frame captures (`MetalCaptureEnabled` in `Info.plist`), for `DM_GPU_CAPTURE`
  DM_METAL_HUD	player	`1` shows Apple's Metal performance HUD over the game (frame rate, frame and GPU time, memory)
@@ -710,7 +710,7 @@ index 33ba1115..e90d74f6 100644
  DM_MOTION_ACC_SIGN	switch	`-1` flips only GameController's acceleration, for a source that reports the specific force (+1 G up at rest) instead of the gravity direction (`motion_fusion.h`); phone and raw HID samples are already in the Switch frame
  DM_MOTION_AXES	switch	`=<map>` such as `x,-z,y`: maps Apple's controller axes to the Switch's, a signed permutation applied to acceleration and rotation alike, for a controller whose axes differ (default `x,y,z`; phone and raw HID samples are already in the Switch frame)
 diff --git a/docs/playing.md b/docs/playing.md
-index 97879c90..daac476b 100644
+index d736e4e..00d9fcb 100644
 --- a/docs/playing.md
 +++ b/docs/playing.md
 @@ -34,6 +34,10 @@ Switch Pro Controller gyro on the Mac still needs the HID support being develope
@@ -725,10 +725,10 @@ index 97879c90..daac476b 100644
  
  Lines like `DM_OPMODE=0` (handheld mode: lower resolution, higher frame rate) in `Documents/env.txt` win over the settings screen, which then shows them greyed out ([the full list](settings.md#settings-in-a-file)). `DM_FPS_TARGET=30` keeps Breath of the Wild, Tears of the Kingdom, Octopath Traveler 0 and Octopath Traveler II at their original 30 fps, which saves battery; `DM_PRESENT_INTERVAL=game` does the same for Monster Train 2. `DM_SHOW_FPS=1` shows the frame rate at the top left (`--show-fps` when packing turns it on from the start). `DM_LAUNCHER=0` skips the settings screen.
 diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
-index 71dc95dd..020221fe 100755
+index 2d88a22..29b8a4d 100755
 --- a/scripts/build_ipa_from_nsp.py
 +++ b/scripts/build_ipa_from_nsp.py
-@@ -67,6 +67,7 @@ LANGUAGE = ''                           # game language, a code or a name: 'ja',
+@@ -69,6 +69,7 @@ LANGUAGE = ''                           # game language, a code or a name: 'ja',
                                          #   DM_LANG=<code> in the app's Documents/env.txt changes it without a rebuild
  KEEP_EXTRACTED = True                   # keep the extracted game files after the IPA is built (saves extraction next time; as big as the game files); False deletes them
  DM_ENV_FILE = ''                        # optional: environment switches for a diagnostic build (one KEY=VALUE per line)
@@ -739,7 +739,7 @@ index 71dc95dd..020221fe 100755
 @@ -1701,7 +1702,8 @@ def rewrite(py, repo, exe_dir, out, env, logs, g, provisional=False):
      try: own = [l for l in (repo / 'dm/games' / Path(env.get('DM_GAME') or '-').name / 'game.tsv').read_text(encoding='utf-8').splitlines() if l.startswith(('build\t', 'snowdrop_pools\t'))]
      except OSError: own = []
-     key = fingerprint(('files', [repo / 'dm/tools' / f for f in ('patch_nso.py', 'nso.py', 'nso_code.py', 'nso_asm.py', 'nso_match.py', 'ue_cvar.py', 'ue_malloc.py', 'ue_region.py', 'ue_ring.py', 'snowdrop_pools.py', 'loader_census.py')] + patch_files(repo, exe_dir, mods, env.get('DM_GAME')) + list(src.values()) + ([manifest] if manifest.is_file() else [])), names, capstone.__version__,
+     key = fingerprint(('files', [repo / 'dm/tools' / f for f in ('patch_nso.py', 'nso.py', 'nso_code.py', 'nso_asm.py', 'nso_match.py', 'ue_cvar.py', 'ue_malloc.py', 'ue_region.py', 'ue_ring.py', 'snowdrop_pools.py', 'loader_census.py', 'fps_target.py', 'ue_fixed_rate.py', 'unity_fps.py')] + patch_files(repo, exe_dir, mods, env.get('DM_GAME')) + list(src.values()) + ([manifest] if manifest.is_file() else [])), names, capstone.__version__,
 -                      {k: env.get(k) for k in ('DM_PATCH_FRONT', 'DM_GAME')}, own)
 +                      {k: env.get(k) for k in ('DM_PATCH_FRONT', 'DM_GAME', 'DM_EXEFS_PATCHES')}, own,
 +                      ('files', [Path(p) for p in (env.get('DM_EXEFS_PATCHES') or '').split(':') if p] + [repo / 'dm/tools/exefs_mods.py']))
@@ -827,7 +827,7 @@ index 71dc95dd..020221fe 100755
  def find_repo(here):   # this file lives in the repository's scripts/; walk up to the level that has dm/tools/nx_extract/Program.cs
      for d in here.parents:
          if (d / 'dm/tools/nx_extract/Program.cs').exists(): return d
-@@ -3093,6 +3151,8 @@ def parse_args(argv):
+@@ -3095,6 +3153,8 @@ def parse_args(argv):
      ap.add_argument('--keep-extracted', action=argparse.BooleanOptionalAction, help='keep the extracted game files after the IPA is built, for the next build (default: the KEEP_EXTRACTED setting, on)')
      ap.add_argument('--work-dir', help='the game\'s build folder, used as it is (default: the WORK_DIR setting, else <title ID>_build in the NSP folder); the extracted files, shader cache and temporary files live there, and the IPA or Mac app defaults to the folder holding it')
      ap.add_argument('--env-file', help='environment switches for a diagnostic build (one KEY=VALUE per line)')
@@ -836,7 +836,7 @@ index 71dc95dd..020221fe 100755
      ap.add_argument('--gpu', help='NVN games: GPU architectures the app gets its pipeline archive for, made on this Mac with metal-tt, comma-separated: g18p (A19 / A19 Pro), or the name a device\'s log gives when the app has no archive for its GPU; '
                      'none = no archive, the device builds the bases on its first start (default: the PSO_GPUS setting; when that is empty, a profile with pso_mtl4 on uses its pso_gpu key or g18p, and other profiles use none). '
                      'With --platform mac-app: the Mac app\'s archive, by default for this Mac\'s GPU (none: the app builds the bases on its first start)')
-@@ -3198,6 +3258,8 @@ def main(args=None):
+@@ -3207,6 +3267,8 @@ def main(args=None):
      if platform not in ('ios', 'mac', 'mac-app'): raise BuildError(f'PLATFORM / --platform must be ios, mac or mac-app: {platform}')
      mac = platform in ('mac', 'mac-app')   # the Mac's shaders and host only: no iOS shaders, Xcode project or IPA (mac_run prints the command; mac-app packs a Mac app, mac_app)
      mac_pack = platform == 'mac-app'
@@ -845,7 +845,7 @@ index 71dc95dd..020221fe 100755
      seen_shaders = SEEN_SHADERS if args.seen_shaders is None else args.seen_shaders
      if seen_shaders and not mac: raise BuildError('--seen-shaders / SEEN_SHADERS builds a partial library of Mac shaders: it needs --platform mac or mac-app')
      if args.mac_sign and not mac_pack: raise BuildError('--mac-sign signs the Mac app: it needs --platform mac-app')
-@@ -3434,7 +3496,10 @@ def main(args=None):
+@@ -3447,7 +3509,10 @@ def main(args=None):
          + (f'; the game\'s languages: {" ".join(have)}' if have else '; the control data lists no languages (not checked)') + (' (DM_LANG=<code> in the run command changes it)' if mac else ' (DM_LANG=<code> in the app\'s Documents/env.txt changes it)'))
  
      patched = work / f'patched_{pkg_ver}'
@@ -856,7 +856,7 @@ index 71dc95dd..020221fe 100755
      if nd := captured_nros(patched): env = dict(env, DM_NRO_DIR=str(nd))
      chain_header(py, repo, env, logs)   # before any host is built
      if provisional or derived:   # the keys that need the rewritten modules, then (provisional) the heap check (both only change keys the host is built with, not the rewrite or the shader steps)
-@@ -3488,7 +3553,7 @@ def main(args=None):
+@@ -3500,7 +3565,7 @@ def main(args=None):
          programs = other_programs(args, g)
          if not icon: say(('no game icon: the NUP carries none' if nup else 'no game icon: a dump folder has no control data') + '; the app\'s icon will be blank' if dump else '[RED] no game icon in the extraction (an older extraction did not save it: delete extract/ and run again); the app\'s icon will be blank')
          mac_app(py, repo, out_ipa, app, work, game, patched, host, font, ios, aoc, gfx, lang, g, app_name, app_version, bundle_id, icon, args.mac_sign or MAC_SIGN, env, logs, env_file,

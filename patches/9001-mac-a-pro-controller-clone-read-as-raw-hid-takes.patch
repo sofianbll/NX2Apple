@@ -11,7 +11,6 @@ Detect Nintendo's report 0x3F from HID button elements, use its button numbering
 Upstream-Status: forwarded seedds/nxnative#989
 Reason: Map Nintendo report 0x3F buttons, calibrate PowerA sticks and set player lights.
 Issue: seedds/nxnative#989
-
 ---
  dm/host/controllers_mac.m         |  1 +
  dm/host/pad_hid.h                 | 34 ++++++++++++++++++++++++++-----
@@ -22,10 +21,10 @@ Issue: seedds/nxnative#989
  6 files changed, 91 insertions(+), 14 deletions(-)
 
 diff --git a/dm/host/controllers_mac.m b/dm/host/controllers_mac.m
-index ba578035..01f8acdd 100644
+index 6de66e3..02998e2 100644
 --- a/dm/host/controllers_mac.m
 +++ b/dm/host/controllers_mac.m
-@@ -350,6 +350,7 @@ static void controller_connect(DMController *d) {
+@@ -377,6 +377,7 @@ static void controller_connect(DMController *d) {
      // DM_PAD_PRESS_TO_JOIN=1: the lowest player free at the first button, whatever the port, the link or the model
      d->slot = g_press_to_join ? pad_slot_take_lowest(&g_slots, (__bridge const void *)d, d.name.UTF8String) : pad_slot_take(&g_slots, (__bridge const void *)d, d.name.UTF8String);
      if (d->slot < 0) { fprintf(stderr, "controller '%s': all %d players are taken\n", d.name.UTF8String, DM_PLAYERS); return; }
@@ -34,7 +33,7 @@ index ba578035..01f8acdd 100644
      controller_pro_changed();
      if (g_merge) controller_merge_haptics(); else controller_route_haptics(d, d->slot);
 diff --git a/dm/host/pad_hid.h b/dm/host/pad_hid.h
-index 888ee2f2..1dd8a2b2 100644
+index 888ee2f..1dd8a2b 100644
 --- a/dm/host/pad_hid.h
 +++ b/dm/host/pad_hid.h
 @@ -1,8 +1,10 @@
@@ -115,7 +114,7 @@ index 888ee2f2..1dd8a2b2 100644
  // One stick: a round dead zone against drift (PAD_HID_DEAD of full deflection), and past it the deflection scaled back to start at 0, so the stick neither jumps to the dead zone's
  // edge nor loses a small x while y is deflected. Each axis is clamped after the scale: a square-gated stick still reaches full x and y in its corners.
 diff --git a/dm/host/pad_hid_mac.h b/dm/host/pad_hid_mac.h
-index 447480ce..5d367279 100644
+index 925a7ea..eeb50c2 100644
 --- a/dm/host/pad_hid_mac.h
 +++ b/dm/host/pad_hid_mac.h
 @@ -11,7 +11,7 @@
@@ -153,10 +152,10 @@ index 447480ce..5d367279 100644
 +    if (d->vid != PAD_HID_DEFAULT_VENDOR && !d->nintendo && !getenv("DM_HID_MAP"))
          LOG("controller '%s' (HID, %04x:%04x): buttons use 8BitDo's numbering; if they are in the wrong places, DM_HID_LOG=1 logs each button's number for a DM_HID_MAP", d->name, d->vid, d->pid);
  }
- static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
-@@ -139,13 +141,18 @@ static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRe
-     for (hid_pad *d = g_hidpads_waiting; d; d = d->next) if (d->hid == hid) return;
-     for (hid_pad *d = g_hidpads_gc; d; d = d->next) if (d->hid == hid) return;
+ // The device's I/O Registry entry: IOHIDManager hands one device over once per matching dictionary it meets (a Pro Controller meets both the GamePad usage
+@@ -145,13 +147,18 @@ static void hidpad_found(void *ctx, IOReturn result, void *sender, IOHIDDeviceRe
+     uint64_t entry = hidpad_entry(hid);
+     if (hidpad_known(g_hidpads, hid, entry) || hidpad_known(g_hidpads_waiting, hid, entry) || hidpad_known(g_hidpads_gc, hid, entry)) return;
      hid_pad *d = calloc(1, sizeof *d); if (!d) { LOG("[RED] HID gamepad: cannot allocate device state"); return; }
 -    pad_hid_init(&d->st, getenv("DM_HID_MAP"));
      NSString *name = (__bridge NSString *)IOHIDDeviceGetProperty(hid, CFSTR(kIOHIDProductKey));
@@ -175,7 +174,7 @@ index 447480ce..5d367279 100644
      d->hid = (IOHIDDeviceRef)CFRetain(hid);
      d->gc_hint = [GCController supportsHIDDevice:hid];   // once per device: the call is not cheap
      if (!d->gc_hint) { hidpad_use(d); return; }
-@@ -164,6 +171,12 @@ static void hidpad_retry(void) {
+@@ -170,6 +177,12 @@ static void hidpad_retry(void) {
      for(CFIndex i=0;i<CFArrayGetCount(pending);i++) hidpad_found(NULL,kIOReturnSuccess,NULL,(IOHIDDeviceRef)CFArrayGetValueAtIndex(pending,i));
      CFRelease(pending);
  }
@@ -188,7 +187,7 @@ index 447480ce..5d367279 100644
  static void hidpad_removed(void *ctx, IOReturn result, void *sender, IOHIDDeviceRef hid) {
      (void)ctx; (void)result; (void)sender;
      hidpad_forget(hid);
-@@ -265,7 +278,7 @@ static void hidpad_twins_take(GCController *gone) {
+@@ -271,7 +284,7 @@ static void hidpad_twins_take(GCController *gone) {
              IOHIDDeviceRegisterInputReportCallback(d->hid, d->report, sizeof d->report, hidpad_report, d);
          } else {
              uint8_t has[PH_AXES]; memcpy(has, d->st.has, sizeof has);   // the axes hidpad_found saw
@@ -198,7 +197,7 @@ index 447480ce..5d367279 100644
          }
          hidpad_schedule(d);
 diff --git a/dm/host/tests/t_controllers_mac.m b/dm/host/tests/t_controllers_mac.m
-index 4423db24..01180f8e 100644
+index a1daf6f..ae8b26f 100644
 --- a/dm/host/tests/t_controllers_mac.m
 +++ b/dm/host/tests/t_controllers_mac.m
 @@ -12,6 +12,7 @@ static NSArray<GCController *> *native_devices;
@@ -217,7 +216,7 @@ index 4423db24..01180f8e 100644
  #define IOServiceGetMatchingServices test_matching_services
  #define IOIteratorNext test_iterator_next
  #define IOIteratorIsValid test_iterator_valid
-@@ -825,6 +827,19 @@ static void test_generic_hid_routing(void) {
+@@ -826,6 +828,19 @@ static void test_generic_hid_routing(void) {
      }
      puts("Generic HID mixed slots, remapping, focus, merged release and pointer activity: OK");
  }
@@ -237,7 +236,7 @@ index 4423db24..01180f8e 100644
  static void test_generic_hid_ownership(void) {
      hid_fixture_start();
      // Reject native/synthetic devices before opening, and leave no state on failure.
-@@ -935,6 +950,7 @@ int main(int argc, char **argv) {
+@@ -936,6 +951,7 @@ int main(int argc, char **argv) {
          test_merged_hotplug();
          test_generic_hid_routing();
          test_home_quit_routing();
@@ -246,7 +245,7 @@ index 4423db24..01180f8e 100644
          test_generic_unknown_identity();
          test_shared_controls();
 diff --git a/dm/host/tests/t_pad_hid.c b/dm/host/tests/t_pad_hid.c
-index ca52870c..677c2f7c 100644
+index ca52870..677c2f7 100644
 --- a/dm/host/tests/t_pad_hid.c
 +++ b/dm/host/tests/t_pad_hid.c
 @@ -94,17 +94,32 @@ static void test_joycon_split(void) {
@@ -286,10 +285,10 @@ index ca52870c..677c2f7c 100644
      h.hat = pad_hid_hat(4, 1, 8); CHECK(pad_hid_buttons(&h) == (DM_BTN_DOWN | DM_BTN_RIGHT));
      CHECK(pad_hid_axis_of(1, 0x30) == PH_X && pad_hid_axis_of(1, 0x35) == PH_RZ && pad_hid_axis_of(2, 0xC5) == PH_BRAKE && pad_hid_axis_of(1, 0x39) == -1);
 diff --git a/docs/reference/services.md b/docs/reference/services.md
-index 7c95705c..a6c10449 100644
+index 552777c..1aefd4f 100644
 --- a/docs/reference/services.md
 +++ b/docs/reference/services.md
-@@ -483,6 +483,14 @@ Most service calls can be found before they crash, before the first boot or the
+@@ -489,6 +489,14 @@ Most service calls can be found before they crash, before the first boot or the
  - **Check:** with the pointer over the game, a controller button or the keyboard hides it; moving the mouse shows it; over the title bar, or with another app active, it stays.
  - **Found on:** every game on the Mac (general); [PR #584](https://github.com/seedds/nxnative/pull/584).
  

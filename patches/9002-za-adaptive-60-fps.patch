@@ -8,7 +8,6 @@ Carry seedds/nxnative PR #918 (7f71a20f6d0a75456c87798847533ea43d9ae877) on the 
 Upstream-Status: forwarded seedds/nxnative#918
 Reason: Carry the verified Z-A 2.0.2 adaptive 60 fps hook until upstream merges it.
 Issue: seedds/nxnative#918
-
 ---
  README.md                            |   2 +-
  dm/games/0100F43008C44000/README.md  |  25 +++++-
@@ -29,12 +28,12 @@ Issue: seedds/nxnative#918
  create mode 100644 dm/tools/tests/test_za_fps.py
 
 diff --git a/README.md b/README.md
-index fe0d9a5..b4ec622 100644
+index e93d17a..00576d6 100644
 --- a/README.md
 +++ b/README.md
 @@ -227,7 +227,7 @@ Under a game, "60 fps with 1.2.0" means it runs at 60 fps (30 on the console) wi
  <tr>
- <td align="center" valign="top" width="33%"><img src="docs/images/pikmin-4.jpg" width="256" alt="Pikmin 4"><br><small><b><a href="dm/games/0100B7C00933A000/README.md">Pikmin 4</a></b></small></td>
+ <td align="center" valign="top" width="33%"><img src="docs/images/pikmin-4.jpg" width="256" alt="Pikmin 4"><br><small><b><a href="dm/games/0100B7C00933A000/README.md">Pikmin 4</a></b><br>60 fps, up to 120 on the Mac</small></td>
  <td align="center" valign="top" width="33%"><img src="docs/images/pokemon-brilliant-diamond.jpg" width="256" alt="Pokémon Brilliant Diamond"><br><small><b><a href="dm/games/0100000011D90000/README.md">Pokémon Brilliant Diamond</a></b><br>60 fps with 1.3.0</small></td>
 -<td align="center" valign="top" width="33%"><img src="docs/images/pokemon-legends-z-a.jpg" width="256" alt="Pokémon Legends: Z-A"><br><small><b><a href="dm/games/0100F43008C44000/README.md">Pokémon Legends: Z-A</a></b></small></td>
 +<td align="center" valign="top" width="33%"><img src="docs/images/pokemon-legends-z-a.jpg" width="256" alt="Pokémon Legends: Z-A"><br><small><b><a href="dm/games/0100F43008C44000/README.md">Pokémon Legends: Z-A</a></b><br>60 fps option (2.0.2)</small></td>
@@ -51,9 +50,9 @@ index 5f30314..9a8ee44 100644
  | `pad_layout simple` | `game.tsv` | the 2D gamepad layout |
 +| `fps_target 60` | `game.tsv`, [`patches.py`](patches.py), 2.0.2 `main` only | the host selects the native clock interval for adaptive 60/30 fps; see [Frame rate](#frame-rate) |
  | `depth_mode zero` | `game.tsv` | the game sets near = 0 with `nvnDeviceSetDepthMode`; see [Pipeline bases made before the game runs](#pipeline-bases-made-before-the-game-runs) |
-
+ 
  `render_cond` stays off: it changes nothing in this game.
-
+ 
 +## Frame rate
 +
 +**Current: adaptive 60 fps for 2.0.2**, main build `b1f12fd919eae86ab8a978317677e64b`. `fps_target 60` enables it by default; `DM_FPS_TARGET=30` selects 30 fps and `DM_FPS_TARGET=0` runs the original interval selector. Other main builds receive no fixed-address hook.
@@ -76,7 +75,7 @@ index 5f30314..9a8ee44 100644
 +These single samples had changing GPU load; they are not a controlled performance comparison. Runtime coverage is limited to the station arrival, camera movement and short walks with audio disabled. Battles, longer transitions, other cutscenes, full-game progression, audio synchronization, iPhone behavior and sustained 60 fps remain unverified. No controlled runtime stall-injection test or headless validation of display-link/fullscreen pacing is claimed. Detailed environments, commands and results are recorded in the PR.
 +
  ## Memory
-
+ 
  - With virtual address memory (a 16 MB system resource), `nninitStartup` (`main+0x1b2e650`) initializes its StandardAllocator over 12 GB of address space, `StandardAllocator::Initialize(nullptr, 0x300000000)` (`main+0x1b3e3ec`), as the Switch's 64 GB alias region allows.
  - **Resolved: `StandardAllocator::Initialize` aborted in `nninitStartup`** (`main+0x1b2e690`). The alias region had to hold the SDK's 1 GB node area and that region, 13 GB, more than a phone gives a process (one 6 GB reservation). Two cuts made it fit the 5 GB block: 4 GB of address space for the allocator (a cut on `main`, since replaced by the host's cap: below) (the pool, 3.2 GB, bounds what it maps; its largest block is `nninitStartup`'s own probe of pool − used, 3.15 GB, allocated and freed at once) and Engage's node area cut. SDK 19's AddressRegionManager puts the region right after the node area (+0x3fe2c000 before the cut), not 1 GB aligned as Engage's SDK did, so a 4.25 GB alias region holds both. `QueryMemoryInfo` reporting more than 4 GB would take the game's big-memory path (heaps of allocatable − 4.27 GB instead of − 2.76 GB).
 -- **Current: the host's StandardAllocator cap, for every build; the `main` cut and its matched rule are gone** (the profile has no `patches.py`; [StandardAllocators over 12 to 62 GB of address space](../../../docs/reference/memory.md#standardallocators-over-12-to-62-gb-of-address-space)). The gate at `StandardAllocator::Initialize` gives the 12 GB request 3.94 GB, what the 4.25 GB alias region has room for. It had already lowered the cut's 4 GB to 3.94 GB since it came in. Without the gate the uncut `main` aborts at `sdk+0x134214`, as before the cut. Checked on 2.0.2 with the route into Lumiose City and a walk there (380 s, frame 11,100), headless from a fresh save with the same keys, against the same build with the cut: the same frames reached, `[RED]` kinds and alias region use, screenshots of the same scenes (only animation and fade timing differ). The base game 1.0.0 ships the same `sdk` (`df7a3960…`) and makes the same call, so the cap covers it too. The NSP script's region check on v0 packed alone (a derived profile, 2026-10-28): 12 GB through `StandardAllocator::Initialize`, returning to `main+0x19e8760`, 1.55 GB mapped in its first 15 s in `nnMain`, which the host gives 3.94 GB on the iPhone layout; no abort. It has not been played since the matched rule went.
@@ -85,7 +84,7 @@ index 5f30314..9a8ee44 100644
  - **Resolved: the alias region's mapped total ran past the application pool in the first minute.** `nninitStartup` allocates and frees everything allocatable (pool − used, 3.15 GB, mapped at the top of the region) and the SDK keeps the freed pages mapped; later allocations map new pages at the bottom until a map fails, and only then does it unmap the cached block and retry. The host never refused a map, so the block stayed mapped beside the 0.4 GB the game used. **Current:** with `mem_map_limit` (`hle_svc.c`) a map past the pool fails with ResultLimitReached, and the used memory `GetInfo` reports counts the mapped pages, as on Horizon (without that, the startup probe itself, sized as total − used, was refused). Measured: one refused 4 MB map, the 3.15 GB unmap, the same map again.
  - **Current:** a memory pool created while the game maps and unmaps its 4 GB region was sometimes refused once by `newBufferWithBytesNoCopy`, then accepted. `mtl_pool_add` retries up to 12 times with a short back-off and prints `[RED] memory pool … created at retry N` (one of the red lines on the Mac route); on a final failure it logs the VM regions around the pool.
 @@ -102,6 +124,7 @@ General host changes first needed here; each applies to every game:
-
+ 
  - **Shader extraction reuse after translation-only updates:** [Shader extraction reruns after translation-only updates](../../../docs/reference/shaders.md#shader-extraction-reruns-after-translation-only-updates).
  - **Offline pipeline archive reuse across chains:** [Offline pipeline archive rebuilt after a chain-only update](../../../docs/reference/shaders.md#offline-pipeline-archive-rebuilt-after-a-chain-only-update).
 +- **Frame-state allocation at a 64 KB patch boundary** (`patch_nso.py`): [Frame-step state at a patch alignment boundary](../../../docs/reference/rewriter.md#frame-step-state-at-a-patch-alignment-boundary).
@@ -114,9 +113,9 @@ index 59bee96..6740b65 100644
 +fps_target	60
  # the game sets the near=0 depth mode (nvnDeviceSetDepthMode): the pipeline bases made before it runs take the main0_z vertex entries
  depth_mode	zero
-
+ 
 @@ -28,8 +30,8 @@ zip_store	.bnk:.pck:.trpfd:.trpfs:.metallib
-
+ 
  # ---- Memory ----
  # nninitStartup (main+0x1b2e650) initializes its StandardAllocator with virtual address memory over 12 GB of address space (StandardAllocator::Initialize(nullptr, 0x300000000), main+0x1b3e3ec),
 -# which the Switch's 64 GB alias region holds. Two cuts for 2.0.2 (patches.py and dm/tools/sdk_patches.py) make it fit the 5 GB block proven on a phone: the allocator gets 4 GB and the SDK's node area 62 MB instead
@@ -208,26 +207,26 @@ index 0000000..4f6aaf6
 +hang	20
 +capture	2200
 diff --git a/dm/games/README.md b/dm/games/README.md
-index c60270b..4adcebd 100644
+index d003204..dd2fb3e 100644
 --- a/dm/games/README.md
 +++ b/dm/games/README.md
-@@ -223,7 +223,7 @@ One row per profile; the notes are each profile's `README.md`.
+@@ -226,7 +226,7 @@ One row per profile; the notes are each profile's `README.md`.
  | `pso_mtl4` | `on` / `off` (the default): on iOS, render pipelines through MTL4Compiler by default, with the pipeline archive, the prepare step, the hybrid pipelines and the prebuild (on by default on the Mac; `DM_PSO_MTL4=1` / `0` overrides). A setting the game was tested with on an iPhone. It also gives the app the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) (`build_ipa.sh` builds it for the `pso_gpu` key's list when present, else for `g18p`, unless `DM_PSO_GPUS` says otherwise) and the pulling libraries (`_bp`). Profiles with `pso_mtl4 off` get no archive unless a build override selects one. Breath of the Wild sets it on |
  | `pso_gpu` | Optional, whitespace-separated GPU architectures: the ones the [pipeline archive made offline](../../docs/development.md#the-pipeline-archive-made-offline) is made for when the profile also sets `pso_mtl4 on`. The bases are made per GPU family and each family's archive costs its own `metal-tt` run, so a profile names exactly the devices it serves. 1-4 tokens, each alphanumeric, with or without the `applegpu_` prefix (for example `g18p applegpu_g19p`); `none` is not a value. Without this key, `pso_mtl4 on` keeps the A19 / A19 Pro default `g18p`; `pso_mtl4 off` gets no archive. The `DM_PSO_GPUS` switch / the NSP script's `--gpu` overrides the archive selection; this key does not enable Metal 4 pipelines |
  | `enc_thread` | `on` / `off` (the default): on the Mac, Metal encoding on its own thread by default, as on iOS for every game (`nvn_rec.h` `rec_on`; `DM_NVN_ENC_THREAD=1` / `0` and the launcher's Encode thread override it). For a game that waits on its fence every frame, whose submit thread would otherwise also encode before the wait: Need for Speed: Hot Pursuit Remastered's 60 fps frame took 18.1 ms with encoding on the submit thread and 16.7 on its own |
--| `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself; Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate, found by name on any build, and on 1.8d.310c its frame regulator, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`) |
-+| `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1, Pokémon Legends: Z-A 2.0.2), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself; Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate, found by name on any build, and on 1.8d.310c its frame regulator, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`) |
+-| `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself, and its fixed frame rate `GEngine->FixedFrameRate`, found by its reflection entry and written while the engine's `bUseFixedFrameRate` is set (DRAGON BALL: Sparking! ZERO's battles, Pikmin 4); Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate, found by name on any build, and on 1.8d.310c its frame regulator, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`) |
++| `fps_target` | Frame rate cap of the rewriter's frame step, for builds that have one (`FRAME_STEP` in the profile's `patches.py`: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0, Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1, Pokémon Legends: Z-A 2.0.2), or the engine's own frame limit the host writes into game memory (`hle_fpslock.c`: Monster Hunter Rise 16.0.2, which also needs `present_interval display`; any Unreal Engine 4.2x / 5 build, its `t.MaxFPS` (or `ue_fps_cvar`) and `rhi.SyncInterval` or `nvn.SyncInterval`, found by name by the rewriter, so the game asks for present interval 1 itself, and its fixed frame rate `GEngine->FixedFrameRate`, found by its reflection entry and written while the engine's `bUseFixedFrameRate` is set (DRAGON BALL: Sparking! ZERO's battles, Pikmin 4); Luigi's Mansion 3 1.4.0, its frame limiter's milliseconds per frame, with `present_interval display`; Pokémon Brilliant Diamond 1.3.0, Unity's integer `Application.targetFrameRate`, also with `present_interval display`; EA SPORTS FC 27, Frostbite's simulation rate, found by name on any build, and on 1.8d.310c its frame regulator, also with `present_interval display`; Fire Emblem Fortune's Weave, a target frame rate the game steps by, found by its readers on any build, so the game asks for present interval 1 itself). `0` (the default): the game's own step. `30` / `60`: the host decides each frame's step in whole vsyncs and keeps the frame on screen that long (`hle_nvn.c` `fstep_tick`, `nvn_fstep.h`): 1 at a 60 cap, 2 when 60 does not hold or at a 30 cap (and while a prerendered movie plays), plus one vsync while the game is behind real time after a late frame. Presents follow that hold instead of the interval the game sets. `DM_FPS_TARGET` overrides it, also from `Documents/env.txt`; the log line `frame step: game time … of real time` checks the game's speed. A derived profile (`derive_profile`) whose `main` has no `FRAME_STEP` stubs, while the profile has them for other builds, gets `fps_target 0`: without the stubs the host would present every vsync and the game would run at double speed. On a main with neither a frame step nor an engine limit the host writes, the host keeps the game's own present interval whatever `fps_target` or `DM_FPS_TARGET` says (`hle_fpslock.c` `dm_fps_lock_engine`) |
  | `fps_max` | `60` (the default) or `120`: the highest rate `fps_target` and the player's **Frame rate** take. `120` only for a game with an engine limit the host writes and whose speed was measured at 120 against 60 over the same inputs: the target then follows the frames that fit, 120 or 60 ([120 fps follows the frame step](../../docs/reference/frame-rate.md#120-fps-follows-the-frame-step)). |
  | `fps_hold` | `on` (the default): with `fps_target`, three late frames in a row raise the hold above the cap's vsyncs (30 or 20 fps), and steady frames that fit try the lower hold again. `off`: frames are never held longer than the cap's vsyncs; each is shown as soon as it is ready. For a game whose updates do not wait for the presents and step by the cap whatever the hold (Age of Calamity): there the hold only paces the screen. `DM_FPS_HOLD=on` / `off` overrides it, also from `Documents/env.txt` Paper Mario: The Thousand-Year Door sets it off too: its frame waits for three render worker threads, and holding frames left them idle, so a frame cost more the longer the hold (the hold stuck at 3 vsyncs, 20 fps, on a loaded Mac; 32–58 fps without holds) |
  | `ue_fps_cvar` | Unreal Engine games: the console variable the host writes `fps_target` into (`hle_fpslock.c`). `t.MaxFPS` (the default) is the engine's frame limit; a game whose settings apply a variable of its own to `t.MaxFPS` names that one, or the next settings change sets the game's 30 again (SHIN MEGAMI TENSEI V: Vengeance: `Project.FrameRateLimit`). The rewriter finds it by its registered name, so a name set here must be in `dm/tools/ue_cvar.py`'s `NAMES` (a red line otherwise): [Unreal's frame limit and present interval, found by name](../../docs/reference/frame-rate.md#unreals-frame-limit-and-present-interval-found-by-name) |
 diff --git a/dm/tools/patch_nso.py b/dm/tools/patch_nso.py
-index 9e9e83a..0a04a1f 100644
+index c3b7b29..8860c8f 100644
 --- a/dm/tools/patch_nso.py
 +++ b/dm/tools/patch_nso.py
-@@ -154,6 +154,14 @@ for off, ob, nb, why in cuts:
+@@ -164,6 +164,14 @@ for off, ob, nb, why in cuts:
  KEYS = {'K18': 508, 'KTLS': 509, 'KTLR': 510, 'KGATE': 511}
  KEY_INDEX = {k: i for i, k in enumerate(('K18', 'KTLS', 'KTLR', 'KGATE'))}
-
+ 
 +# Reserve the frame-state page before emitting any patch-area branches. The
 +# ordinary 64 KB alignment often leaves room after the key page, but not when
 +# that page ends exactly on the boundary (Z-A 2.0.2). Front layouts already
@@ -239,9 +238,9 @@ index 9e9e83a..0a04a1f 100644
  # ---- Unreal console variables in main (dm/tools/ue_cvar.py finds them by their registered names, without a build ID) ----
  # The fixups table names each one's TAutoConsoleVariable (UE_CVAR:<name>); the host writes those the profile decides on (hle_fpslock.c, hle_uecvar.c)
  import ue_cvar
-@@ -1508,7 +1516,7 @@ for off, oid, ow, why in region_obs: use_area(off); put_branch(off, site_obs(off
+@@ -1532,7 +1540,7 @@ for off, oid, ow, why in region_obs: use_area(off); put_branch(off, site_obs(off
  obs += region_obs
-
+ 
  # ---- Frame step in whole vsyncs (the mains whose patch file has FRAME_STEP: The Legend of Zelda: Tears of the Kingdom 1.4.3, Breath of the Wild 1.9.0, Hyrule Warriors: Age of Calamity 1.3.0,
 -# Paper Mario: The Thousand-Year Door 1.0.1 and ASTRAL CHAIN 1.0.1; host only) ----
 +# Paper Mario: The Thousand-Year Door 1.0.1, ASTRAL CHAIN 1.0.1 and Pokemon Legends: Z-A 2.0.2; host only) ----
@@ -249,13 +248,13 @@ index 9e9e83a..0a04a1f 100644
  # nvn_fstep.h): the step is the number of vsyncs the host keeps the frame on screen (1 = 60 fps, 2 = 30 when 60 does not hold), plus one while the game is behind real time after
  # a late frame, so motion is even and game time = real time. The steps stay values the games' own logic uses (1 to 3). Age of Calamity's updates are not held by the presents:
 diff --git a/dm/tools/tests/test_patches.py b/dm/tools/tests/test_patches.py
-index d7c64ff..6a25f1b 100644
+index 63f7b27..6280cd8 100644
 --- a/dm/tools/tests/test_patches.py
 +++ b/dm/tools/tests/test_patches.py
-@@ -36,6 +36,36 @@ end = next(i for i, n in enumerate(tree.body[start:], start) if isinstance(n, as
+@@ -37,6 +37,36 @@ end = next(i for i, n in enumerate(tree.body[start:], start) if isinstance(n, as
  REGISTRY_CODE = compile(ast.Module(body=tree.body[start:end], type_ignores=[]), str(source), 'exec')
-
-
+ 
+ 
 +class FrameStateLayout(unittest.TestCase):
 +    def layout(self, key, patch, enabled=True, name='main', far=False):
 +        # Run the driver's layout adjustment after registry discovery, before
@@ -288,7 +287,7 @@ index d7c64ff..6a25f1b 100644
 +
  def builds_of(g):   # {build ID: module name} of a profile's build rows (a profile or its title ID)
      return {bid: m for row in (game.load(g) if isinstance(g, str) else g).builds().values() for m, bid in row.items() if m != 'display'}
-
+ 
 diff --git a/dm/tools/tests/test_za_fps.py b/dm/tools/tests/test_za_fps.py
 new file mode 100644
 index 0000000..6bba3fe
@@ -418,12 +417,12 @@ index 0000000..6bba3fe
 +if __name__ == '__main__':
 +    unittest.main()
 diff --git a/docs/images/gallery.tsv b/docs/images/gallery.tsv
-index e176cb9..29deee9 100644
+index 92783b6..18664be 100644
 --- a/docs/images/gallery.tsv
 +++ b/docs/images/gallery.tsv
 @@ -68,7 +68,7 @@ patricks-parabox.jpg	Patrick's Parabox		0100E44016C22000
  persona-5-royal.jpg	Persona 5 Royal		01005CA01580E000
- pikmin-4.jpg	Pikmin 4		0100B7C00933A000
+ pikmin-4.jpg	Pikmin 4	60 fps, up to 120 on the Mac	0100B7C00933A000
  pokemon-brilliant-diamond.jpg	Pokémon Brilliant Diamond	60 fps with 1.3.0	0100000011D90000
 -pokemon-legends-z-a.jpg	Pokémon Legends: Z-A		0100F43008C44000
 +pokemon-legends-z-a.jpg	Pokémon Legends: Z-A	60 fps option (2.0.2)	0100F43008C44000
@@ -431,13 +430,13 @@ index e176cb9..29deee9 100644
  pokemon-violet.jpg	Pokémon Violet		01008F6008C5E000
  pokemon-sword.jpg	Pokémon Sword		0100ABF008968000
 diff --git a/docs/reference/rewriter.md b/docs/reference/rewriter.md
-index f8381a5..9721d07 100644
+index ffe39a4..2aea881 100644
 --- a/docs/reference/rewriter.md
 +++ b/docs/reference/rewriter.md
-@@ -294,6 +294,13 @@ To enroll a cut for any game's own module:
+@@ -303,6 +303,13 @@ To enroll a cut for any game's own module:
  - **Fix:** for a front patch area, reserve a zero-filled 16 KB state page immediately after the key page by extending `IMAGE_SIZE`. The existing Mac and iOS loaders map it with the BSS; no padding is added to the game binary. Ordinary modules retain their existing layout.
  - **Found on:** [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md#frame-rate).
-
+ 
 +### Frame-step state at a patch alignment boundary
 +
 +- **Symptom:** `frame step state page` assertion when adding `FRAME_STEP` to a module with an appended patch area.
@@ -446,5 +445,5 @@ index f8381a5..9721d07 100644
 +- **Found on:** [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md#frame-rate) 2.0.2: key page `0x617c000`, state `0x6180000`, patch area `0x6190000`.
 +
  ### Patch area right before the base for a long text
-
+ 
  - **Symptom:** `B()` range assertion, then `patch area of … bytes does not fit in the … before the base`.
