@@ -11,7 +11,10 @@ extension LiveConsoleDriver {
         if let rumble, game.value(rumble) != rumble.onValue { showToast(t("console.gamePad.rumbleOff"), kind: "controller"); return }
         let gain = game.controllerSettings.first { $0.env == "DM_RUMBLE_GAIN" }.flatMap { Double(game.value($0)) } ?? 1
         let intensity = Float(Self.testIntensity(gain: gain))
-        let pads = devices.filter { $0.value.haptics != nil }
+        let pads = devices.compactMap { entry -> (String, GCController)? in
+            guard let pad = entry.value.gameController, pad.haptics != nil else { return nil }
+            return (entry.key, pad)
+        }
         guard !pads.isEmpty else { showToast(t("console.gamePad.noRumble"), kind: "controller"); return }
         guard intensity > 0 else { return }
         for (id, pad) in pads { self.rumble(pad, id: id, intensity: intensity) }

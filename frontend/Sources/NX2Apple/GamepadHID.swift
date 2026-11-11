@@ -136,7 +136,7 @@ final class LauncherHIDDevice {
         }, battery: nil,
         setPlayer: { self.player = $0 },
         showPlayer: { self.player = $0; self.writeLights($0) },
-        identify: { _ in await self.identify() })
+        identify: { _ in await self.identify() }, gameController: nil)
     }
 
     @discardableResult

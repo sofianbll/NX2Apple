@@ -12,6 +12,7 @@ struct ConsolePadDevice {
     /// Shows the player on the hardware, including a light bar when the source has one.
     let showPlayer: (Int) -> Void
     let identify: (String) async -> Void
+    let gameController: GCController?
 
     static func gameController(_ c: GCController, id: String, identify: @escaping (GCController, String) async -> Void) -> ConsolePadDevice {
         func index(_ player: Int?) -> GCControllerPlayerIndex {
@@ -36,6 +37,6 @@ struct ConsolePadDevice {
                 light.color = GCColor(red: color.red, green: color.green, blue: color.blue)
             }
         },
-        identify: { await identify(c, $0) })
+        identify: { await identify(c, $0) }, gameController: c)
     }
 }
