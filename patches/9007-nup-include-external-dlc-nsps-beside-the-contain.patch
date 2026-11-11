@@ -1,0 +1,161 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sofian <sofianbll.x@gmail.com>
+Date: Wed, 11 Nov 2026 20:56:11 +0100
+Subject: [PATCH] NUP: include external DLC NSPs beside the container
+
+Upstream-Status: pending
+Reason: Include DLC NSPs beside a NUP, keeping its base, update and packaged DLC
+Issue: none reported upstream yet
+
+---
+diff --git a/dm/tools/tests/test_nsp_nup.py b/dm/tools/tests/test_nsp_nup.py
+index 659ce81..9b2a995 100644
+--- a/dm/tools/tests/test_nsp_nup.py
++++ b/dm/tools/tests/test_nsp_nup.py
+@@ -19,6 +19,7 @@ import romfs_image
+ spec = importlib.util.spec_from_file_location('build_ipa_from_nsp', REPO / 'scripts/build_ipa_from_nsp.py')
+ if spec is None or spec.loader is None: raise ImportError('scripts/build_ipa_from_nsp.py')
+ nsp = importlib.util.module_from_spec(spec); spec.loader.exec_module(nsp)
++if not hasattr(nsp, 'build_nx_extract'): nsp.build_nx_extract = lambda *args: 'nx'   # this suite replaces the real builder on a machine without .NET
+ pack_nup = nsp.pack_nup
+ zstd = pack_nup.zstd
+ 
+@@ -116,6 +117,17 @@ class Base(unittest.TestCase):
+         td = tempfile.TemporaryDirectory(); self.addCleanup(td.cleanup)
+         self.dir = Path(td.name).resolve() / 'game'; self.dir.mkdir()
+         self.path = self.dir / 'game.nup'
++        class Reader:
++            @staticmethod
++            def contents(paths): return {p: [('AddOnContent', TID + 0x1002, 0)] for p in paths}
++        self.cm = mock.patch.object(nsp, 'package_reader', return_value=mock.MagicMock(__enter__=mock.Mock(return_value=Reader)))
++        self.cm.start(); self.addCleanup(self.cm.stop)
++        def probe(argv, log, **kw):
++            for p in argv[2:]:
++                log.write_text(f'package 0 {p.name}\ncontent AddOnContent {TID + 0x1002:016x} 0\n')
++        self.cm1 = mock.patch.object(nsp, 'build_nx_extract', lambda *a: 'nx'); self.cm1.start(); self.addCleanup(self.cm1.stop)
++        self.cm2 = mock.patch.object(nsp, 'run', side_effect=probe)
++        self.cm2.start(); self.addCleanup(self.cm2.stop)
+         write_nup(self.path, [(0, TID, 0, version(marker='old'), META), (1, TID, VER, version(main=b'new code', marker='new'), b''),
+                               (2, TID + 0x1001, 0, {'romfs': {'dlcfile': b'dlc'}}, b'')])
+ 
+@@ -529,6 +541,35 @@ class Pack(Base):
+         self.assertEqual(sorted(p.name for p in aoc.iterdir()), ['1.img', '1.img.inputs.json'])
+         self.assertIn('dlcfile', romfs_image.read_index(aoc / '1.img'))
+ 
++    def test_nup_includes_external_dlc(self):
++        (self.dir / 'second.nsp').write_bytes(b'PFS0' + b'\0' * 96)
++        app, fam = nsp.scan_nup(self.dir); self.addCleanup(fam['nup'].close)
++        self.assertEqual(app, TID)
++        self.assertEqual([(t, getattr(p, 'name', None)) for t, _, p in fam['dlc']], [(TID + 0x1001, 'game.nup (addon 040074A01BF13001)'), (TID + 0x1002, 'second.nsp')])
++        logs = self.out() / 'logs'; logs.mkdir(parents=True)
++        runs = []
++        def extract(argv, log, **kw):
++            runs.append(argv)
++            Path(argv[4]).parent.mkdir(parents=True, exist_ok=True)
++            romfs_image.publish(romfs_image.write([[b'file', b'from the external NSP', False, 0, 0]], str(argv[4]), lambda src, out: out.write(src) or len(src)), str(argv[4]), 'fixture')
++        with mock.patch.object(nsp, 'run', side_effect=extract):
++            aoc = nsp.extract_aoc('nx', 'keys', REPO, self.out(), app, fam, logs)
++        self.assertIn('dlcfile', romfs_image.read_index(aoc / '1.img'))
++        self.assertIn('', romfs_image.read_index(aoc / '2.img'))
++        self.assertEqual(sorted(f.name for f in aoc.iterdir()), ['1.img', '1.img.inputs.json', '2.img', '2.img.inputs.json'])
++        self.assertEqual(len(runs), 2)   # the container's cleanup must not discard the freshly extracted external DLC
++
++    def test_external_dlc_does_not_overwrite_internal(self):
++        (self.dir / 'second.nsp').write_bytes(b'PFS0' + b'\0' * 96)
++        app, fam = nsp.scan_nup(self.dir); self.addCleanup(fam['nup'].close)
++        self.assertEqual(fam['dlc'][0][0], TID + 0x1001)
++        self.assertEqual(fam['dlc'][0][2], fam['nup'].packages[2])
++
++    def test_external_dlc_is_only_scanned_for_a_folder(self):
++        (self.dir / 'second.nsp').write_bytes(b'PFS0' + b'\0' * 96)
++        app, fam = nsp.scan_nup(self.path); self.addCleanup(fam['nup'].close)
++        self.assertEqual([t for t, _, _ in fam['dlc']], [TID + 0x1001, TID + 0x1002])
++
+     def test_nsp_dlc_not_reused_after_nup(self):   # the NUP packs into the aoc/ the NSP extraction keyed: the same NSPs again extract again
+         n = self.open(); app, _, _, dlc = pack_nup.scan(n)
+         work, logs, p = self.out(), self.out() / 'logs', self.dir / 'dlc.nsp'
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index d1ad5a2..fde23cb 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -735,7 +735,7 @@ def scan_nsps(nsp_dir, contents_of, want=None):
+     if want is None and len(fams) > 1: raise BuildError(f'more than one game in the folder: {games}; keep one game per folder, or name the one to pack with --title-id / TITLE_ID (a cartridge dump that holds two games)')
+     app = want if want is not None else next(iter(fams))
+     fam = fams[app]
+-    if fam['base'] is None: raise BuildError(f'no base game NSP found in {nsp_dir} (title ID {app:016X})')
++    if fam['base'] is None and not fam['dlc']: raise BuildError(f'no base game NSP found in {nsp_dir} (title ID {app:016X})')
+     return app, fam
+ 
+ 
+@@ -1507,13 +1507,28 @@ def nup_file(path):   # the NUP to pack: path when it is a .nup file, else the o
+     return nups[0] if nups else None
+ 
+ 
+-def scan_nup(path, want=None):   # a NUP as scan_nsps gives a folder of NSPs, with its packages for the NSPs: (title ID, {'base', 'updates', 'dlc', 'nup': the open container})
++def scan_nup(path, want=None, repo=None, keys=None, env=None):   # a NUP as scan_nsps gives a folder of NSPs, with its packages for the NSPs: (title ID, {'base', 'updates', 'dlc', 'nup': the open container})
++    add = []   # NUP + DLC NSP beside it: the container is the base/update source, never replace them with the external game package
++    if path.is_dir() or path.parent.is_dir():
++        probe_dir = path if path.is_dir() else path.parent
++        nup_file_path = path if path.is_file() else next(p for p in files_with_suffix(probe_dir, '.nup') if pack_nup.is_nup(p))
++        with pack_nup.Nup(nup_file_path) as probe:
++            app = pack_nup.scan(probe)[0]   # the container supplies the base/update, so the folder needs no base NSP
++        if files_with_suffix(probe_dir, *PACKAGE_SUFFIXES):
++            with package_reader(Path(__file__).resolve().parent.parent if repo is None else repo, keys, tool_env() if env is None else env) as reader:
++                _app, f = scan_nsps(probe_dir, reader.contents, app)
++                add = f['dlc']
++        path = nup_file_path
+     try:
+         n = pack_nup.Nup(path)
+         app, base, vers, dlc = pack_nup.scan(n)
+     except (pack_nup.Error, OSError) as e: raise BuildError(str(e)) from e
+     if want is not None and want != app: raise BuildError(f'no game {want:016X} (--title-id / TITLE_ID) in {path}, which holds {app:016X}')
+-    return app, {'base': base, 'updates': sorted(vers.items()), 'dlc': [(tid, None, k) for tid, k in sorted(dlc.items())], 'nup': n}
++    entries = {tid - app - 0x1000: (tid, None, k) for tid, k in dlc.items()}
++    for tid, version, p in add:
++        if p.suffix.lower() not in ('.nsp', '.xci'): continue   # compressed forms are converted only by the NSP pipeline below
++        entries.setdefault(tid - app - 0x1000, (tid, version, p))
++    return app, {'base': base, 'updates': sorted(vers.items()), 'dlc': [entries[i] for i in sorted(entries)], 'nup': n}
+ 
+ 
+ def extract_nup(ex, name, k, base, app, n, marker=None):   # one version of a NUP (k: its base or an update package) into the layout extract makes; the code modules and the image are kept while unchanged
+@@ -1581,16 +1596,27 @@ def extract_aoc(nx, keys, repo, work, app, fam, logs):
+     and aoc/ holds the files that extraction wrote (names, sizes and times): a NUP or a dump folder packs its DLC into the same aoc/"""
+     if not fam['dlc']: return None
+     if fam.get('nup'):
++        internal = {tid: k for tid, _, k in fam['dlc'] if not isinstance(k, Path)}   # container packages have .romfs, external NSPs have a filesystem path
+         PROG.stage('unpack DLC', step='unpacking')
+         if fam['nup'].path in _nxb_nups and all((work / 'aoc' / f'{tid - app - 0x1000}.img').is_file() for tid, _, _ in fam['dlc']):   # nxb-extract wrote them with the versions
+             want = {f'{tid - app - 0x1000}.img' for tid, _, _ in fam['dlc']}
+             for f in (work / 'aoc').iterdir():
+                 if f.name not in want: rmtree(f)   # DLC no longer in the container
+             PROG.end(f'{len(fam["dlc"])} DLC'); return work / 'aoc'
+-        try: pack_nup.pack_dlc(fam['nup'], app, {tid: k for tid, _, k in fam['dlc']}, work / 'aoc', say=lambda s: None)
++        dst = work / 'aoc'
++        for tid, _, p in fam['dlc']:   # the external NSPs supplement the container, whose RomFS was kept/reused above
++            if isinstance(p, Path):
++                idx = tid - app - 0x1000
++                if not (dst / f'{idx}.img').is_file():
++                    run([nx, keys, '--aoc', p, dst / f'{idx}.img', '--romfs-image', f'{tid:016x}'], logs / f'aoc_{idx}.log')
++        try: pack_nup.pack_dlc(fam['nup'], app, internal, dst, say=lambda s: None)
+         except pack_nup.Error as e: raise BuildError(str(e)) from e
++        for tid, _, p in fam['dlc']:   # external NSPs were already extracted above; keep them after the container's stale-file cleanup
++            if isinstance(p, Path) and not (dst / f'{idx}.img').is_file():
++                idx = tid - app - 0x1000
++                run([nx, keys, '--aoc', p, dst / f'{idx}.img', '--romfs-image', f'{tid:016x}'], logs / f'aoc_{idx}.log')
+         PROG.end(f'{len(fam["dlc"])} DLC')
+-        return work / 'aoc'
++        return dst
+     if fam.get('dump'):
+         PROG.stage('pack DLC', step='packing')
+         try: pack_dump.pack_dlc(app, {tid: roms for tid, _, roms in fam['dlc']}, work / 'aoc', say=lambda s: None)
+@@ -3316,7 +3342,7 @@ def main(args=None):
+     if PROGRAM_INDEX and dump: raise BuildError('--program / PROGRAM_INDEX picks a program from a multi-program application\'s NSPs; '
+                                                      + ('a NUP' if nup else 'a dump folder') + ' is read as one program\'s files')
+     if nup:
+-        app, fam = scan_nup(nup, int(want, 16) if want else None)
++        app, fam = scan_nup(nup, int(want, 16) if want else None, repo, keys, env)
+         say(f'a NUP: {nup.name}, {app:016X}, {len(fam["updates"])} update(s), {len(fam["dlc"])} DLC')
+         if fam['base'] is None: say(pack_nup.NO_BASE)
+     elif dump:
+-- 
+2.56.0

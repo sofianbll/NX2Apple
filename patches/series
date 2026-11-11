@@ -88,3 +88,4 @@
 9004-nvn-render-resolution-1-5x-2x-dm-upscale.patch
 9005-add-mac-code-mod-build-support.patch
 9006-mac-a-raw-hid-stick-saturates-near-the-edge-of-i.patch
+9007-nup-include-external-dlc-nsps-beside-the-contain.patch
