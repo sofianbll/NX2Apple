@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Sofian <sofianbll.x@gmail.com>
-Date: Sat, 7 Nov 2026 22:42:43 +0100
+Date: Wed, 11 Nov 2026 16:31:03 +0100
 Subject: [PATCH] Mac: Home quits from Nintendo report 0x3F HID pads
 
 Track Home (usage 13) and positional A/B outside guest button mapping, and poll the quit prompt when they change. Other generic HID layouts and twin Pro Controllers read from report 0x30 stay unchanged.
@@ -19,10 +19,10 @@ Issue: seedds/nxnative#989
  7 files changed, 49 insertions(+), 8 deletions(-)
 
 diff --git a/dm/host/controllers_mac.m b/dm/host/controllers_mac.m
-index 02998e2..360ad57 100644
+index 82ed0ec5..55a8a4e6 100644
 --- a/dm/host/controllers_mac.m
 +++ b/dm/host/controllers_mac.m
-@@ -23,7 +23,7 @@ enum { PAD_OFF, PAD_DPAD, PAD_LEFT_STICK, PAD_RIGHT_STICK, PAD_TOUCH };
+@@ -25,7 +25,7 @@ enum { PAD_OFF, PAD_DPAD, PAD_LEFT_STICK, PAD_RIGHT_STICK, PAD_TOUCH };
  @public
      int slot, map[DM_PAD_BUTTONS];
      steam_state input;
@@ -31,18 +31,18 @@ index 02998e2..360ad57 100644
      IOHIDDeviceRef device; // Triton only: proprietary output and feature reports
      joycon_pad *joycon; // borrowed until joycon_detach, with an independent player slot
      hid_pad *generic; // borrowed until hidpad_detach; never a Triton output route
-@@ -306,6 +306,10 @@ GCController *front_controllers_quit_buttons(int *home, int *a, int *b) {
-         } else if(d->joycon) {
-             *home|=d->joycon->st.home;
-             *a|=!!(d->joycon->st.buttons & DM_BTN_A); *b|=!!(d->joycon->st.buttons & DM_BTN_B);
+@@ -340,6 +340,10 @@ GCController *front_controllers_quit_buttons(int *home, int *a, int *b) {
+             // Triton's Guide and physical A (bottom) / B (right), before DM_PAD_MAP.
+             *home|=!!(d->quit_buttons & (1u<<22));
+             *a|=!!(d->quit_buttons & DM_BTN_B); *b|=!!(d->quit_buttons & DM_BTN_A);
 +        } else if(d->generic) {
 +            // Report 0x3F's Home and positional A / B, before DM_PAD_MAP.
 +            *home|=!!(d->quit_buttons & (1u<<22));
 +            *a|=!!(d->quit_buttons & DM_BTN_A); *b|=!!(d->quit_buttons & DM_BTN_B);
-         } else if(d->device) {
-             // Triton's Guide and physical A (bottom) / B (right), before DM_PAD_MAP.
-             *home|=!!(d->quit_buttons & (1u<<22));
-@@ -416,7 +420,12 @@ static void hidpad_read(hid_pad *hid) {
+         }
+     }
+     return holder;
+@@ -476,7 +480,12 @@ static void hidpad_read(hid_pad *hid) {
      uint32_t buttons=(uint32_t)(pro ? hid->pro_m : pad_hid_buttons(&hid->st));
      d->input=(steam_state){.buttons=buttons,.lx=s[0],.ly=s[1],.rx=s[2],.ry=s[3]};
      if(d->slot<0 && g_press_to_join && !buttons) return;
@@ -57,7 +57,7 @@ index 02998e2..360ad57 100644
  static void hidpad_motion(hid_pad *hid, const pro_motion_sample *s, int n) {
      DMController *d=controller_for_hid(hid);
 diff --git a/dm/host/home_quit.h b/dm/host/home_quit.h
-index ddab115..48a3941 100644
+index 8acb4a5b..e8ee7e33 100644
 --- a/dm/host/home_quit.h
 +++ b/dm/host/home_quit.h
 @@ -1,7 +1,8 @@
@@ -71,7 +71,7 @@ index ddab115..48a3941 100644
  // The hold works wherever the press reaches the host: controller_add_gc claims Home on each native pad (preferredSystemGestureState = GCSystemGestureStateDisabled), and
  // macOS 27 respects the claim when the Home button setting for apps lets the app decide (front_mac.m logs the setting). When the system takes Home anyway (it opens the
 diff --git a/dm/host/pad_hid_mac.h b/dm/host/pad_hid_mac.h
-index eeb50c2..f8bd3c6 100644
+index eeb50c2c..f8bd3c63 100644
 --- a/dm/host/pad_hid_mac.h
 +++ b/dm/host/pad_hid_mac.h
 @@ -11,7 +11,7 @@
@@ -84,10 +84,10 @@ index eeb50c2..f8bd3c6 100644
  #import <IOKit/hid/IOHIDManager.h>
  #import <GameController/GameController.h>
 diff --git a/dm/host/tests/t_controllers_mac.m b/dm/host/tests/t_controllers_mac.m
-index ae8b26f..118bc87 100644
+index 700b15a6..fc632349 100644
 --- a/dm/host/tests/t_controllers_mac.m
 +++ b/dm/host/tests/t_controllers_mac.m
-@@ -789,6 +789,34 @@ static void test_home_quit_routing(void) {
+@@ -850,6 +850,34 @@ static void test_home_quit_routing(void) {
      hidpad_removed(NULL,kIOReturnSuccess,NULL,hid); hid_fixture_finish();
      puts("Home quit: adapter ownership, physical labels, prompt/settle gating and focus recovery: OK");
  }
@@ -122,7 +122,7 @@ index ae8b26f..118bc87 100644
  static void test_generic_hid_routing(void) {
      for(int merged=0;merged<2;merged++) {
          hid_fixture_start(); g_merge=merged; g_slots=(pad_slots){0};
-@@ -951,6 +979,7 @@ int main(int argc, char **argv) {
+@@ -1038,6 +1066,7 @@ int main(int argc, char **argv) {
          test_merged_hotplug();
          test_generic_hid_routing();
          test_home_quit_routing();
@@ -131,7 +131,7 @@ index ae8b26f..118bc87 100644
          test_generic_hid_ownership();
          test_generic_unknown_identity();
 diff --git a/docs/mac-controllers.md b/docs/mac-controllers.md
-index e633df5..2847e60 100644
+index e633df5a..2847e608 100644
 --- a/docs/mac-controllers.md
 +++ b/docs/mac-controllers.md
 @@ -63,7 +63,9 @@ Triton's rumble or motion protocol. `DM_HID_MAP` maps device button usages to
@@ -146,7 +146,7 @@ index e633df5..2847e60 100644
  For shared ownership, incomplete device metadata and recovery after deferred
  admission, see [controller hotplug and fallback](reference/services.md#steam-controller-hotplug-interrupts-other-players).
 diff --git a/docs/playing.md b/docs/playing.md
-index 2f8851b..d736e4e 100644
+index cda980d3..9d7757d0 100644
 --- a/docs/playing.md
 +++ b/docs/playing.md
 @@ -44,7 +44,7 @@ A Mac app shows the game's settings in a window before the game starts ([The Mac
@@ -159,10 +159,10 @@ index 2f8851b..d736e4e 100644
  With [Press a button to join](settings.md#press-a-button-to-join) on in the settings (`DM_PAD_PRESS_TO_JOIN=1` in `env.txt`), on the Mac and on iOS, a controller becomes a player only when one of its buttons is pressed, as the lowest player free: the players choose their order and how many play, over Bluetooth or USB, identical pads included, and a controller connected while the game runs joins at its first press. The log says `press a button to play`, then `a button pressed: player N`. The press that joins also reaches the game. When a game asks for more players than it sees, a prompt over the game says how many are wanted and joined and waits for the others: a controller that presses a button (or connects, with the setting off) joins, A finishes once enough are in, and B or Escape closes it, as on a Switch.
  
 diff --git a/docs/reference/services.md b/docs/reference/services.md
-index 1aefd4f..8c0b456 100644
+index 07fd066f..c8be5b1c 100644
 --- a/docs/reference/services.md
 +++ b/docs/reference/services.md
-@@ -370,7 +370,7 @@ Most service calls can be found before they crash, before the first boot or the
+@@ -403,7 +403,7 @@ Most service calls can be found before they crash, before the first boot or the
  - **Cause:** GameController lists one controller for both. Their USB serial numbers are the same, which may be why; over Bluetooth each has its own. IOKit has both devices, and each sends its report `0x30`. GameController gives a controller no HID identity, so its one controller cannot be tied to one of the two devices.
  - **Fix:** one mechanism in `pad_hid_mac.h`, on its own HID manager. It keeps the devices GameController reads (`g_hidpads_gc`) instead of dropping them, to count IOKit's pads of each model (vendor and product ID) against GameController's controllers of it: a Pro Controller's by their product category, another model's by name (`vendorName` is the HID product string). Other Microsoft, Sony and Nintendo pads cannot be matched by name (a DualShock 4's HID product string is `Wireless Controller`), so they are never read this way, which would read them twice. When IOKit has at least two pads of a model and more than GameController lists, after a 3 s wait for a pad that is not listed yet (`pad_dupes_want`), every pad of that model is read there, a player each, by USB location: a Pro Controller from its report `0x30` (`pad_pro.h`) with its gyro (`motion_pro.h`), any other model from its HID elements (`pad_hid.h`). `front_mac.m` leaves GameController's controllers of that model unread (`hidpad_gc_unread`). When GameController lists them all again, they go back to it. `DM_PAD_IDENTICAL=0` turns it off, as does `DM_HID_PADS=0`; `DM_MOTION=0` and `DM_MOTION_HID=0` turn off only the gyro. `motion_pro_mac.h` is not involved: it still pairs one Pro Controller's raw motion with GameController's one controller.
  - **Sticks:** a Pro Controller read this way asks for its stick calibration in SPI flash, subcommand `0x10` in output report `0x01`: the user's at `0x8010` when its magic `B2 A1` is there, else the factory's at `0x603D` ([spi_flash_notes.md](https://github.com/dekuNukem/Nintendo_Switch_Reverse_Engineering/blob/master/spi_flash_notes.md)). Alongside the macOS driver both pads answered over USB, and a pad over Bluetooth, on an M4 Pro with macOS 27. Without an answer each axis measures its own rest and reach.
@@ -171,7 +171,7 @@ index 1aefd4f..8c0b456 100644
  - **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) 1.8.0, two Pro Controllers over USB, 33 minutes of two-player split-screen races.
  
  ### One Pro Controller read as two players
-@@ -493,7 +493,7 @@ Most service calls can be found before they crash, before the first boot or the
+@@ -533,7 +533,7 @@ Most service calls can be found before they crash, before the first boot or the
  
  - **Symptom:** on the Mac, a Pro Controller clone read as a raw HID pad (a PowerA NANO pairs over Bluetooth as `Lic Pro Controller`, HID vendor and product 0) has its buttons in the wrong places, a full stick push does not run (it reads 61 to 74%), and its four lights keep running in a chase.
  - **Cause:** such a pad's report descriptor is Nintendo's, and it stays in the Pro Controller's simple report `0x3F`. That report numbers its buttons differently from the default 8BitDo map, carries its sticks raw (the NANO's rest 9 and 11% off centre and reach about 0.78 of the axis from there), and the pad chases its lights until a console gives it a player.

@@ -14,7 +14,7 @@ Issue: seedds/nxnative#989
  2 files changed, 11 insertions(+), 5 deletions(-)
 
 diff --git a/dm/host/pad_hid.h b/dm/host/pad_hid.h
-index 1dd8a2b..f3461ad 100644
+index 1dd8a2b2..f3461ade 100644
 --- a/dm/host/pad_hid.h
 +++ b/dm/host/pad_hid.h
 @@ -73,11 +73,14 @@ static float pad_hid_raw_axis(pad_hid *h, int a, float v) {
@@ -46,10 +46,10 @@ index 1dd8a2b..f3461ad 100644
 +    pad_hid_stick(h->axis[z ? PH_Z : PH_RX], -h->axis[z ? PH_RZ : PH_RY], outer, &s[2], &s[3]);
  }
 diff --git a/dm/host/tests/t_pad_hid.c b/dm/host/tests/t_pad_hid.c
-index 677c2f7..ed6801c 100644
+index 8f9fe7ae..007189c9 100644
 --- a/dm/host/tests/t_pad_hid.c
 +++ b/dm/host/tests/t_pad_hid.c
-@@ -117,6 +117,9 @@ int main(void) {
+@@ -155,6 +155,9 @@ int main(void) {
      CHECK(fabsf(pad_hid_raw_axis(&h, PH_X, -0.08f)) < 1e-6f);
      CHECK(pad_hid_raw_axis(&h, PH_Y, 0.9f) == 1 && h.rest[PH_Y] == 0);       // held while connecting: not a rest
      pad_hid_init(&h, NULL, 0); CHECK(!h.raw);
