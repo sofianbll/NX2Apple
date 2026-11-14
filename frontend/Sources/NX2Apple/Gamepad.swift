@@ -150,7 +150,7 @@ final class LauncherGamepad: ObservableObject {
     private var inputGeneration = 0
     private var gcControllerIDs: Set<String> = []
     private var observers: [NSObjectProtocol] = []
-    private var hid: LauncherHIDManager?
+    private(set) var hid: LauncherHIDManager?
     private var repeatTimer: Timer?
     private var repeating: Action?
     private var repeatingController: String?
@@ -190,17 +190,27 @@ final class LauncherGamepad: ObservableObject {
             })
         }
         if observeSystem {
-            hid = LauncherHIDManager(
-                onInput: { [weak self] id, input in self?.read(input, controller: id) },
-                onRemove: { [weak self] id in self?.disconnected(id) },
-                onChange: { [weak self] in
-                    self?.hidRevision += 1
-                    self?.updateConnected()
-                }
-            )
+            hid = Self.sharedHID
+            observers.append(center.addObserver(forName: .launcherHIDPadsChanged, object: nil, queue: .main) { [weak self] note in
+                if let id = note.userInfo?["removed"] as? String { self?.disconnected(id) }
+                self?.hidRevision += 1
+                self?.updateConnected()
+            })
             attach()
         }
     }
+
+    /// One HID manager for the app, as GameController has one handler per pad: each LauncherGamepad opening its own made
+    /// every report run once per live gamepad on the main thread. Input goes to the visible view, changes to every gamepad.
+    private static let sharedHID = LauncherHIDManager(
+        onInput: { id, input in
+            guard let owner = inputOwner, owner.hid != nil else { return }   // a gamepad made with observeSystem: false reads no device
+            owner.gcControllerIDs.insert(id)   // reset with GC's when another view takes the input
+            owner.read(input, controller: id)
+        },
+        onRemove: { id in NotificationCenter.default.post(name: .launcherHIDPadsChanged, object: nil, userInfo: ["removed": id]) },
+        onChange: { NotificationCenter.default.post(name: .launcherHIDPadsChanged, object: nil) }
+    )
 
     private func disconnected(_ id: String) {
         inputGeneration += 1

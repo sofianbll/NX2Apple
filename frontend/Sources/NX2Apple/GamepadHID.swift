@@ -3,6 +3,11 @@ import GameController
 import IOKit.hid
 import os
 
+extension Notification.Name {
+    /// A raw HID pad came or went. `userInfo["removed"]` is the id of a pad that left.
+    static let launcherHIDPadsChanged = Notification.Name("NX2Apple.launcherHIDPadsChanged")
+}
+
 extension LauncherGamepad {
     enum HIDAdmission { case skip, wait, use }
 

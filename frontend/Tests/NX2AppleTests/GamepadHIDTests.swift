@@ -74,6 +74,14 @@ final class GamepadHIDTests: XCTestCase {
         XCTAssertEqual(LauncherGamepad.hidDpad(-1).y, 0)
     }
 
+    /// Each view makes its own LauncherGamepad. One HID manager each read every report once per gamepad on the main thread.
+    func testEveryGamepadSharesOneHIDManager() {
+        let first = LauncherGamepad(), second = LauncherGamepad()
+        XCTAssertNotNil(first.hid)
+        XCTAssertTrue(first.hid === second.hid)
+        XCTAssertNil(LauncherGamepad(observeSystem: false).hid)
+    }
+
     func testAxisNormalizationDeadZoneAndRightStickSelection() {
         XCTAssertEqual(LauncherGamepad.normalizeHIDAxis(50, min: 0, max: 100), 0)
         XCTAssertEqual(LauncherGamepad.normalizeHIDAxis(100, min: 0, max: 100), 1)
