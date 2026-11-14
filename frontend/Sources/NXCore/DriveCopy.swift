@@ -47,7 +47,9 @@ package enum DriveCopy {
         var info = statfs()
         guard statfs(probe, &info) == 0 else { return nil }
         let name = withUnsafePointer(to: &info.f_fstypename) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MFSTYPENAMELEN)) { String(cString: $0) } }
-        return Volume(freeBytes: Int64(info.f_bavail) * Int64(info.f_bsize), fileSystem: name, readOnly: info.f_flags & UInt32(MNT_RDONLY) != 0)
+        let (prod, overflow) = info.f_bavail.multipliedReportingOverflow(by: UInt64(info.f_bsize))
+        let freeBytes = overflow || prod > UInt64(Int64.max) ? Int64.max : Int64(prod)
+        return Volume(freeBytes: freeBytes, fileSystem: name, readOnly: info.f_flags & UInt32(MNT_RDONLY) != 0)
     }
 
     /// What stops the copy of `files` (relative path to size) onto `volume`, nil when it can go ahead. `have` is what the folder holds
@@ -74,8 +76,8 @@ package enum DriveCopy {
     /// Copies `files` (paths relative to `archive`) into `destination`. A file already there at the same size is left alone, so a
     /// second run finishes a first that stopped. Each file is written under a temporary name and renamed when whole, so a drive pulled
     /// out midway never leaves a cut-off `romfs.img` that looks complete. `progress` gets the bytes done and the total to copy.
-    package static func copy(archive: String, files: [String: Int64], to destination: String, chunk: Int = 8 << 20,
-                             progress: (Int64, Int64) -> Void, cancelled: () -> Bool = { false }) throws {
+    package static func copy(archive: String, files: [String: Int64], origins: [String: String] = [:], to destination: String,
+                             chunk: Int = 8 << 20, progress: (Int64, Int64) -> Void, cancelled: () -> Bool = { false }) throws {
         let fm = FileManager.default
         let have = ShellInstall.localFiles(in: destination)
         let pending = files.filter { have[$0.key] != $0.value }.keys.sorted()
@@ -85,12 +87,13 @@ package enum DriveCopy {
         for relative in pending {
             if cancelled() { throw CopyError.cancelled }
             let target = destination + "/" + relative, partial = target + ".partial"
+            let sourcePath = origins[relative] ?? (archive + "/" + relative)
             try fm.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
             try? fm.removeItem(atPath: partial)
             guard fm.createFile(atPath: partial, contents: nil) else {
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: partial])
             }
-            let input = try FileHandle(forReadingFrom: URL(fileURLWithPath: archive + "/" + relative))
+            let input = try FileHandle(forReadingFrom: URL(fileURLWithPath: sourcePath))
             let output = try FileHandle(forWritingTo: URL(fileURLWithPath: partial))
             defer { try? input.close(); try? output.close() }
             while true {

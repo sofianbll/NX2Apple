@@ -395,7 +395,9 @@ def ld64_lld() -> Path | None:
     for base in ([root / 'bin'] if root else []) + [Path(p) for p in os.environ.get('PATH', '').split(os.pathsep) if p]:
         for n in ('ld64.lld.exe', 'ld64.lld'):
             p = base / n
-            if p.is_file():
+            # not Path.is_file: before Python 3.14 it raises what stat raises, and Windows refuses
+            # stat in some PATH folders (WinError 448 in one an app keeps for itself)
+            if os.path.isfile(p):
                 return p
     return None
 
@@ -688,6 +690,7 @@ def repair_tbd_stubs(
     sdk: Path | str,
     log=None,
     *,
+    quota=None,
     max_bytes: int | None = None,
     bytes_used: int = 0,
     max_entries: int | None = None,
@@ -709,6 +712,14 @@ def repair_tbd_stubs(
 
     def _charge(added_entries: int, added_bytes: int) -> None:
         nonlocal entries_used, bytes_used
+        if quota is not None:
+            quota.charge(
+                added_entries,
+                added_bytes,
+                label='text-stub materialization',
+                error_cls=exc_type,
+            )
+            return
         entries_used += added_entries
         bytes_used += added_bytes
         if max_entries is not None and entries_used > max_entries:
@@ -1167,11 +1178,17 @@ def ascii_temp_dir(prefix: str = 'nspb-'):
             return False
     candidates = [tempfile.gettempdir()]
     if os.name == 'nt' or 'PUBLIC' in os.environ:
-        candidates += [os.environ.get('PUBLIC', r'C:\Users\Public') + (r'\Temp' if os.name == 'nt' else '/Temp'),
-                       r'C:\Windows\Temp', 'C:\\Temp']
+        pub = os.environ.get('PUBLIC', r'C:\Users\Public' if os.name == 'nt' else '')
+        if pub:
+            sep = '\\' if ('\\' in pub or (len(pub) >= 2 and pub[1] == ':')) else '/'
+            candidates.append(pub.rstrip('\\/') + sep + 'Temp')
+        if os.sep == '\\':
+            candidates += [r'C:\Windows\Temp', r'C:\Temp']
     for allow_space in (False, True):
         for base in candidates:
             if not base or not ok(base) or (not allow_space and ' ' in base):
+                continue
+            if os.sep == '/' and not base.startswith('/'):
                 continue
             try:
                 os.makedirs(base, exist_ok=True)

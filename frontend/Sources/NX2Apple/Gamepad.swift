@@ -55,8 +55,6 @@ final class LauncherGamepad: ObservableObject {
         handlerOwner = nil
         deactivate()
     }
-    /// Whether "Split Joy-Con pair into two controllers" is enabled (#740).
-    var joyconSplit: () -> Bool = { UserDefaults.standard.bool(forKey: ControlLayout.joyconSplitKey) }
 
     struct RawPadInput {
         var dpadX: Float = 0, dpadY: Float = 0
@@ -262,9 +260,8 @@ final class LauncherGamepad: ObservableObject {
     private func read(_ raw: RawPadInput, controller: String, isJoyCon: Bool = false) {
         let eligible = appIsActive() && Self.inputOwner === self
         let generation = inputGeneration
-        let split = isJoyCon && joyconSplit()
-        let groups = Self.states(controller: controller, input: raw, splitJoyCon: split)
-        if edges.syncSplitMode(baseController: controller, split: split, groups: groups) {
+        let groups = Self.states(controller: controller, input: raw, splitJoyCon: false)
+        if edges.syncSplitMode(baseController: controller, split: false, groups: groups) {
             DispatchQueue.main.async { self.stopRepeat() }
             return
         }

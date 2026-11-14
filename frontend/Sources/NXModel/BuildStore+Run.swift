@@ -8,11 +8,14 @@ extension BuildStore {
     package func startBuild() {
         guard !running else { return }
         selectedTitleID = nil
+        queuedExportIPA = nil
+        queuedExportOneGame = nil
         runBuild()
     }
 
     func runBuild() {
         guard !running else { return }
+        guard prepareBuildPreflight() else { return }
         // The shared app needs a device this Mac knows. Found out here, before an hour of building, not after it.
         if target != BuildTarget.mac, !shellDeviceChecked, !exportsShell {
             guard installsDirectly else { doneNote = t("shell.needsDevice"); done = false; return }
@@ -20,9 +23,11 @@ extension BuildStore {
             return
         }
         shellDeviceChecked = false
-        if target != BuildTarget.mac, !exportsOneGame, askAboutStaleFrameworks() { return }   // StaleFrameworksPrompt.swift (#449)
+        let skipStale = skipStaleCheckForQueuedEntry
+        skipStaleCheckForQueuedEntry = false
+        if target != BuildTarget.mac, !exportsOneGame, !skipStale, askAboutStaleFrameworks() { return }   // StaleFrameworksPrompt.swift (#449)
         if let message = spaceProblem() { doneNote = message; done = false; return }
-        stopping = false; stoppedByPlayer = false
+        stopping = false; stoppedByPlayer = false; archiveGeneration &+= 1
         buildingGame = true; runningTarget = target
         beginOperation(.building, game: gameName, titleID: gameTitleID, destination: .target)
         running = true; done = false; doneNote = ""; stages = []; log.clear(); staleShadersMessageKey = nil
@@ -147,11 +152,13 @@ extension BuildStore {
         // A small env file the pipeline copies into the app bundle (main.m sets one variable per line at boot). Only for an iPhone or
         // iPad build: the in-game menu's words in the launcher's language (GameMenuText, #1129), and the CPU decode of BC textures when
         // the player turned that compatibility switch on (a Mac app runs on this Mac's GPU, which always has BC support).
+        var tempEnvURL: URL?
         if target != BuildTarget.mac {
-            let envPath = NSTemporaryDirectory() + "nspb-env-\(UUID().uuidString.prefix(8)).txt"
+            let envURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("nspb-env-\(UUID().uuidString).txt")
             do {
-                try GameMenuText.envFile(bcOnCPU: bcOnCPU, t).write(toFile: envPath, atomically: true, encoding: .utf8)
-                args += ["--env-file", envPath]
+                try GameMenuText.envFile(bcOnCPU: bcOnCPU, t).write(to: envURL, atomically: true, encoding: .utf8)
+                tempEnvURL = envURL
+                args += ["--env-file", envURL.path]
                 if bcOnCPU { say(t("msg.bcOn")) }
             } catch {
                 say(String(format: t("msg.bcEnvFailed"), error.localizedDescription))
@@ -175,6 +182,7 @@ extension BuildStore {
         } else if let macOutput {
             macAppPath = ""
             args += ["--platform", "mac-app", "-o", macOutput.builderURL.path]
+            if !nxbRun, RepoLayout.supportsFallbackIcon(repo.path) { args += macFallbackIconArguments(tidHex) }
         } else {
             // Only the game's framework: the one shared app is made and signed after the script (installShell)
             args += ShellInstall.buildArguments(workDir: workDir, team: exportsShell ? "" : devices.signingTeam)
@@ -197,13 +205,17 @@ extension BuildStore {
         // is the per-user temp folder whether or not the app's own environment carries one.
         var denv = toolEnvironment(python: py)
         if !oneGameIPAPath.isEmpty { denv.merge(OneGameIPA.environment) { $1 } }
-        if macApp { denv.merge(macBuildEnvironment(tidHex)) { $1 } }   // NX_FALLBACK_ICON for a game with no control data (#784)
         let launch = nxbRun
             ? experimentalLaunch(nxb: experimentalBuilderBinary ?? "", scriptArguments: args, engine: engine, environment: denv, python: py)   // BuildStore+Builder.swift (#749)
             : ProcessLaunch(executable: py, arguments: args, environment: denv, directory: engine, groupPython: py)
+        let envCleanup = tempEnvURL
+        let utf8 = UTF8StreamDecoder.Locked()
         let onExit: @Sendable (Int32) -> Void = { [weak self] status in
+            if let envCleanup { try? FileManager.default.removeItem(at: envCleanup) }
             hop {
                 guard let self else { return }
+                let tail = utf8.finish()
+                if !tail.isEmpty { self.ingest(tail) }
                 self.flushLines()
                 if status == 0, !self.stopping, let macOutput {
                     self.markAllDone()
@@ -232,7 +244,7 @@ extension BuildStore {
                             ?? ShellInstall.frameworkPath(workDir: self.effectiveWorkDir, titleID: key)
                         let tid = ShellInstall.titleID(ofFramework: fw)
                         self.packArchive(workDir: self.effectiveWorkDir, titleID: tid) {
-                            if self.deferShellPackaging && self.exportsShell { self.deferShellPackage(framework: fw, titleID: tid, name: name) }
+                            if self.deferShellPackaging { self.deferShellPackage(framework: fw, titleID: tid, name: name, archive: $0) }
                             else if self.exportsShell { self.exportShell(framework: fw, titleID: tid, name: name) }
                             else { self.installShell(framework: fw, titleID: tid, name: name, archive: $0) }
                         }
@@ -264,28 +276,45 @@ extension BuildStore {
         }
         do {
             proc = try runner.start(launch, onOutput: { @Sendable [weak self] d in
-                guard let s = String(data: d, encoding: .utf8) else { return }
-                hop { self?.ingest(s) }
+                hop {
+                    guard let self else { return }
+                    let s = utf8.decode(d)
+                    if !s.isEmpty { self.ingest(s) }
+                }
             }, onExit: onExit)
-        } catch { fail(String(format: t("msg.launchFailed"), error.localizedDescription)) }
+        } catch {
+            if let envCleanup { try? FileManager.default.removeItem(at: envCleanup) }
+            fail(String(format: t("msg.launchFailed"), error.localizedDescription))
+        }
     }
 
     /// The app goes where the player finds it, macOS checks its first start (`preflight`), and the build is done.
     @discardableResult
     func finishMacApp(_ output: MacAppOutput) -> Task<Void, Never> {
-        Task {
+        let workDir = effectiveWorkDir.isEmpty ? output.workDirectoryURL.path : effectiveWorkDir
+        archiveGeneration &+= 1
+        let generation = archiveGeneration
+        return Task {
             do {
-                let app = try await Task.detached { try output.finish() }.value
+                let app = try await Task.detached {
+                    let placed = try output.finish()
+                    PostBuildCleanup.cleanWorkDirectory(workDir, removeExtractedRomFS: true, removeShellFramework: true)
+                    return placed
+                }.value
+                guard archiveGeneration == generation, !stopping else { return }
                 macAppPath = app.path
                 say("✓ " + shortPath(app.path))
                 await preflight(app)
+                guard archiveGeneration == generation else { return }
                 done = true
                 doneNote = t("msg.macAppDone")
                 running = false
                 cleanupStaging()
             } catch MacAppOutput.FinishError.retainedApp(let app, let cause) {
+                guard archiveGeneration == generation else { return }
                 fail(app.path + "\n" + cause.localizedDescription)
             } catch {
+                guard archiveGeneration == generation else { return }
                 fail(t("msg.macAppMissing"))
             }
         }
@@ -301,22 +330,41 @@ extension BuildStore {
         let started = Date()
         stages.append(Stage(id: id, name: Stage.localizedName("preflight", t), state: .running, started: started))
         say(t("msg.preflight"))
-        var timer: Task<Void, Never>?
-        let error: Error? = await withCheckedContinuation { (c: CheckedContinuation<Error?, Never>) in
-            let end: @MainActor (Error?) -> Void = { [weak self] e in
-                guard let self, self.endPreflight != nil else { return }   // once: the app quit, Stop, or the timeout
-                self.endPreflight = nil
-                c.resume(returning: e)
+        let error: Error?
+        if let run = runPreflight {
+            let check = Task { @MainActor in await run(app, preflightTimeout) }
+            error = await withTaskCancellationHandler {
+                await withCheckedContinuation { (c: CheckedContinuation<Error?, Never>) in
+                    let end: @MainActor (Error?) -> Void = { [weak self] e in
+                        guard let self, self.endPreflight != nil else { return }
+                        self.endPreflight = nil
+                        check.cancel()
+                        c.resume(returning: e)
+                    }
+                    endPreflight = { end($0) }
+                    Task { @MainActor in end(await check.value) }
+                }
+            } onCancel: {
+                check.cancel()
             }
-            endPreflight = { end($0) }
-            let timeout = preflightTimeout
-            timer = Task {
-                do { try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) } catch { return }
-                end(MacPreflight.Failure.timedOut)
+        } else {
+            var timer: Task<Void, Never>?
+            error = await withCheckedContinuation { (c: CheckedContinuation<Error?, Never>) in
+                let end: @MainActor (Error?) -> Void = { [weak self] e in
+                    guard let self, self.endPreflight != nil else { return }   // once: the app quit, Stop, or the timeout
+                    self.endPreflight = nil
+                    c.resume(returning: e)
+                }
+                endPreflight = { end($0) }
+                let timeout = preflightTimeout
+                timer = Task {
+                    do { try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) } catch { return }
+                    end(MacPreflight.Failure.timedOut)
+                }
+                open(app, end)
             }
-            open(app, end)
+            timer?.cancel()
         }
-        timer?.cancel()
         guard let i = stages.firstIndex(where: { $0.id == id }) else { return }
         if let error {
             let why: String
@@ -338,13 +386,22 @@ extension BuildStore {
     package func verifyShellDevice() {
         buildingGame = true; runningTarget = target
         beginOperation(.building, game: gameName, titleID: gameTitleID, destination: .target)
+        stopping = false; stoppedByPlayer = false; installPhaseActive = true
         running = true; done = false; doneNote = ""; failure = nil; stages = []
         let xcrun = devices.xcrun, device = devices.installDevice, runner = runner
         DispatchQueue.global(qos: .userInitiated).async {
             let link = ShellInstall.connection(of: device, in: DeviceTools.devices(xcrun: xcrun, timeout: 20, runner: runner))
             hop {
+                self.installPhaseActive = false
                 self.running = false
+                if self.stopping {
+                    self.skipStaleCheckForQueuedEntry = false
+                    self.stopping = false
+                    self.doneNote = self.t("msg.stopped")
+                    return
+                }
                 if link == .notPaired {
+                    self.skipStaleCheckForQueuedEntry = false
                     self.failure = BuildFailure(kind: .devicePairing, gameName: nil)
                     self.doneNote = String(format: self.t("shell.notPaired"), self.devices.deviceName(device))
                     return
@@ -359,10 +416,6 @@ extension BuildStore {
 extension BuildStore {
     /// #966: the game files are the least a build needs. Short of that, the build does not start, and the note says why and what is kept.
     func spaceProblem() -> String? {
-        let folder = outDir.isEmpty ? inputFolder : outDir
-        guard !folder.isEmpty, let free = spaceAvailable(folder) else { return nil }
-        let space = BuildSpace(needed: BuildSpace.size(of: [basePath, updatePath] + dlcPaths), available: free)
-        guard space.isShort else { return nil }
-        return String(format: t("space.short"), shortPath(folder), BuildSpace.text(space.needed), BuildSpace.text(space.available))
+        preflightSpaceProblem()
     }
 }

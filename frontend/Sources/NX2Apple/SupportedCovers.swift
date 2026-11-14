@@ -43,7 +43,7 @@ import SwiftUI
     /// Through the launcher's store, into the library's artwork folder.
     static func live(store: ArtworkStore = .shared, directory: URL, language: String, maxPixel: Int) -> SupportedCovers {
         SupportedCovers(directory: directory, language: language, maxPixel: maxPixel) { ids, language in
-            _ = await store.fetchMissing(ids, language: language, waits: true)
+            _ = await store.fetchMissing(ids, language: language, waits: true, lightweight: true)
         }
     }
 
@@ -98,6 +98,7 @@ import SwiftUI
             tried.ids.formUnion(ids)
             let fetch = fetch, language = language
             await Task { await fetch(ids, language) }.value   // not cancelled with the list: see the type's note
+            guard !Task.isCancelled, run == generation else { break }
             for id in ids { if let image = saved(id) { images[id] = image } }
         }
         if run == generation { worker = nil }

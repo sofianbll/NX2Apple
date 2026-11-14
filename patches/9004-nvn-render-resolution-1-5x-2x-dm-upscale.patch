@@ -28,7 +28,6 @@ Front-ends: translate the new DM_UPSCALE and DM_UPSCALE_GAME rows and their fixe
 Upstream-Status: forwarded seedds/nxnative#1716
 Reason: Render NVN 3D at 1.5x or 2x with mixed-resolution demotion and a launch-time default of 1x.
 Issue: seedds/nxnative#1716
-
 ---
  dm/games/010015100B514000/README.md       |  15 +
  dm/games/0100B7C00933A000/README.md       |  15 +
@@ -37,27 +36,26 @@ Issue: seedds/nxnative#1716
  dm/gfx/msl/copy.metal                     |   7 +-
  dm/gfx/msl/ups_resolve.metal              |  42 ++
  dm/gfx/nvn/nvn_feedback.inc               |   1 +
- dm/gfx/nvn/nvn_mtl.m                      | 726 ++++++++++++++++++++--
+ dm/gfx/nvn/nvn_mtl.m                      | 682 ++++++++++++++++++++--
  dm/gfx/nvn/nvn_ups.h                      | 156 +++++
  dm/gfx/tests/Makefile                     |  11 +
  dm/gfx/tests/t_clear_ds.m                 |   2 +-
- dm/gfx/tests/t_upgrade_alias.m            |   4 +
- dm/gfx/tests/t_ups.c                      | 163 +++++
+ dm/gfx/tests/t_upgrade_alias.m            |   2 +
+ dm/gfx/tests/t_ups.c                      | 163 ++++++
  dm/gfx/tests/t_ups_resolve.m              | 120 ++++
  dm/ios/tests/launcher_storage_check.swift |   2 +-
  dm/tools/tests/test_launcher_settings.py  |   8 +-
  docs/development.md                       |   2 +
- docs/env_switches.tsv                     |   3 +
  docs/reference/rendering.md               |  16 +
  docs/settings.md                          |  11 +-
- 20 files changed, 1263 insertions(+), 61 deletions(-)
+ 19 files changed, 1229 insertions(+), 46 deletions(-)
  create mode 100644 dm/gfx/msl/ups_resolve.metal
  create mode 100644 dm/gfx/nvn/nvn_ups.h
  create mode 100644 dm/gfx/tests/t_ups.c
  create mode 100644 dm/gfx/tests/t_ups_resolve.m
 
 diff --git a/dm/games/010015100B514000/README.md b/dm/games/010015100B514000/README.md
-index 4f8ac92..517b656 100644
+index 3655f49..f603da4 100644
 --- a/dm/games/010015100B514000/README.md
 +++ b/dm/games/010015100B514000/README.md
 @@ -59,6 +59,19 @@ Game-specific findings; the general host changes they led to are listed under [F
@@ -243,7 +241,7 @@ index 0000000..2c8c4d2
 +  dst.write(wsum > 0 ? sum / wsum : src.read(uint2(clamp(int2(c), int2(0), int2(p.sw - 1, p.sh - 1)))), g);   // Lanczos weights are normalized so flat areas stay flat; an empty footprint cannot happen but reads the centre
 +}
 diff --git a/dm/gfx/nvn/nvn_feedback.inc b/dm/gfx/nvn/nvn_feedback.inc
-index 1f16e08..df89a76 100644
+index b40a10a..1e35cb3 100644
 --- a/dm/gfx/nvn/nvn_feedback.inc
 +++ b/dm/gfx/nvn/nvn_feedback.inc
 @@ -70,6 +70,7 @@ static void tf_draw(NvProg *pr,const p_draw *dw,const p_draw_idx *di) {
@@ -255,7 +253,7 @@ index 1f16e08..df89a76 100644
      for(int b=0;b<4;b++)if(vs->tf_stride[b])enc_r_vbuf(en,TF_SLOT+b,dst[b]);
      enc_r_draw_instanced(en,MTLPrimitiveTypePoint,dw->first,dw->count,instances,dw->base_instance);enc_r_end(en);
 diff --git a/dm/gfx/nvn/nvn_mtl.m b/dm/gfx/nvn/nvn_mtl.m
-index 167c0ce..528bdb2 100644
+index 4aa8fea..952a9e3 100644
 --- a/dm/gfx/nvn/nvn_mtl.m
 +++ b/dm/gfx/nvn/nvn_mtl.m
 @@ -1,4 +1,5 @@
@@ -264,7 +262,7 @@ index 167c0ce..528bdb2 100644
  #import <Metal/Metal.h>
  #import <QuartzCore/CAMetalLayer.h>
  #import <QuartzCore/CAMetalDisplayLink.h>
-@@ -43,6 +44,7 @@
+@@ -36,6 +37,7 @@
  #include "nvn_primitive.h"
  #include "nvn_timestamp.h"
  #include "msl_image.h"
@@ -272,7 +270,7 @@ index 167c0ce..528bdb2 100644
  #include "dmsh_chain.h"   // DMSH_CHAIN: the translation chain version of the B shader library expected by this source tree, one for every game (beside this file, tools/dmsh_chain.py --header)
  #include "game_profile.h"   // game profile constants (profile id, the profile's switches)
  // Texture slot table per stage: 0-127 the combined handles (nvnCommandBufferBindTexture), 128-255 the separate texture binds (NVN_SEPTEX_SLOT0, nvn_obj.h)
-@@ -1223,7 +1225,7 @@ static void rc_gpu_write(uint64_t dst, uint64_t n) {
+@@ -1307,7 +1309,7 @@ static void rc_gpu_write(uint64_t dst, uint64_t n) {
  // Counting starts at the first reset or, for a game that never resets, at the first report: the GPU's counter runs from the queue's creation, so such a game reads end - begin of two reports around each query
  // (Red Dead Redemption's character occlusion queries: counting used to start only at a reset, so every report was 0 and the bodies of characters a few metres away were dropped).
  // (Previously always wrote 0: occlusion query = 'fully occluded', campfires / light sources got culled - the character select screen calls ResetCounter 21 times per frame)
@@ -281,7 +279,7 @@ index 167c0ce..528bdb2 100644
  typedef struct { int n; vis_slot s[]; } vis_list;
  #define VIS_SLOTS 8192
  typedef struct { __strong id<MTLBuffer> buf; uint64_t fence; } vis_buf;
-@@ -2285,7 +2287,7 @@ static void post_run(post_rec *r, uint64_t c0, uint64_t c1) {
+@@ -2455,7 +2457,7 @@ static void post_run(post_rec *r, uint64_t c0, uint64_t c1) {
          else if (ops[i].kind == 3) {   // Samples passed: the running total, in submission order
              if (ops[i].mode == VIS_ZERO) { g_vis_acc = 0; continue; }
              vis_list *l = ops[i].vis;
@@ -289,8 +287,8 @@ index 167c0ce..528bdb2 100644
 +            for (int k = 0; k < l->n; k++) { g_vis_acc += nvn_ups_samples(((const uint64_t *)((__bridge id<MTLBuffer>)l->s[k].buf).contents)[l->s[k].slot], l->s[k].ups); CFRelease(l->s[k].buf); }   // a scaled pass counted f² samples per game pixel
              free(l); if (ops[i].mode == VIS_REPORT) { uint64_t rec[2] = {g_vis_acc, gpu_ticks()}; memcpy((void *)ops[i].addr, rec, sizeof rec); }
          }
-         else { uint64_t t = rep_ticks(&ops[i], sc, seg_last, c0, c1), rec[2] = {(ops[i].type == 0 || ops[i].type == 0x10) && !dm_prof()->render_cond ? t : 0, t}; memcpy((void *)ops[i].addr, rec, sizeof rec); }   // render_cond: a timestamp report's counter field is 0, as on the GPU (see rc_value)
-@@ -2464,6 +2466,11 @@ static MTLPixelFormat pf_srgb_linear(MTLPixelFormat pf) {
+         else { uint64_t t = rep_ticks(&ops[i], sc, seg_last, c0, c1), rec[2] = {0, t}; memcpy((void *)ops[i].addr, rec, sizeof rec); }   // a timestamp report's counter field is 0, as on the GPU (see rc_value)
+@@ -2658,6 +2660,11 @@ static MTLPixelFormat pf_srgb_linear(MTLPixelFormat pf) {
      for (size_t i = 0; i < sizeof g_pfv_srgb / sizeof *g_pfv_srgb; i++) if (pf == g_pfv_srgb[i].b) return g_pfv_srgb[i].a;
      return MTLPixelFormatInvalid;
  }
@@ -302,7 +300,7 @@ index 167c0ce..528bdb2 100644
  static int tex_need_pfv(MTLPixelFormat base, MTLPixelFormat view) {
      if (base == view) return 0;
      for (size_t i = 0; i < sizeof g_pfv_srgb / sizeof *g_pfv_srgb; i++)
-@@ -2568,6 +2575,9 @@ static void retire_resume(const void *o) {   // the last serial entry holding a
+@@ -2693,6 +2700,9 @@ static void image_desc_drop_pool(const void *pool) {   // caller holds g_smu
  static void treg_drop_pool_views(const void *pool);
  static void cpu_tex_drop_pool(const void *pool);
  static void gws_drop_pool(const pool_t *p);
@@ -312,20 +310,7 @@ index 167c0ce..528bdb2 100644
  void mtl_alias_drop_pool(const void *pool) {
      if (!pool) return;
      pthread_mutex_lock(&g_smu);
-@@ -2584,6 +2594,12 @@ void mtl_alias_drop_pool(const void *pool) {
-         if (k.pool != (uint64_t)(uintptr_t)pool) continue;
-         alias_key *nk = realloc(ks, (n + 1) * sizeof *ks); if (!nk) break; ks = nk; ks[n++] = k;
-     }
-+    if (g_ups_demoted_mem.n) {   // resolution upscaling: the demoted-storage marks of this pool go with it (collect, then delete: deletion shifts entries back)
-+        uint32_t m = 0; ups_mem_key mks[64];
-+        for (uint32_t i = 0; i < g_ups_demoted_mem.cap && m < 64; i++) { if (!g_ups_demoted_mem.vals[i]) continue;
-+            ups_mem_key k; memcpy(&k, g_ups_demoted_mem.keys + (size_t)i * g_ups_demoted_mem.klen, sizeof k); if (k.pool == (uint64_t)(uintptr_t)pool) mks[m++] = k; }
-+        for (uint32_t j = 0; j < m; j++) nvn_hm_del(&g_ups_demoted_mem, &mks[j]);
-+    }
-     for (uint32_t j = 0; j < n; j++) {
-         void *old = nvn_hm_del(&g_alias, &ks[j]);
-         if (!old) continue;
-@@ -2825,6 +2841,133 @@ static int tex_view_to_mtl(uint32_t format, uint32_t *pf, uint8_t swz[4]) {
+@@ -2856,6 +2866,133 @@ static int tex_view_to_mtl(uint32_t format, uint32_t *pf, uint8_t swz[4]) {
      if (g_bc_cpu && pf && nvn_bc_unpacked(format, &unpacked, &bpp)) *pf = unpacked;
      return mapped;
  }
@@ -459,12 +444,11 @@ index 167c0ce..528bdb2 100644
  static MTLTextureDescriptor *tex_desc(const tex_t *t, int packaged) {
      uint32_t pf = 0; uint8_t swz[4];
      // A BC format on a GPU without BC support: create the texture in the uncompressed format the
-@@ -2891,11 +3034,19 @@ static MTLTextureDescriptor *tex_desc(const tex_t *t, int packaged) {
+@@ -2926,11 +3063,18 @@ static MTLTextureDescriptor *tex_desc(const tex_t *t, int packaged) {
  // In-place upgrade: when the original texture was not created with PixelFormatView (off by default, to keep Apple GPU lossless compression) but a different-format view is needed, create a new one with the original spec + PixelFormatView, copy over every slice × level, and replace the registration.
  // Count: across the 4 screens character select / camp / wilderness / combat, 17473 textures needed a different-format view 0 times, so this is a fallback and does not rely on predicting which textures need it
  // The same upgrade adds render-target usage for a whole-level clear (clear_tex) of a texture made without it: Monster Hunter Rise clears a 32x80 packaged one
 -static id<MTLTexture> tex_upgrade(const tex_t *t, id<MTLTexture> asked, MTLTextureUsage add, MTLPixelFormat view_pf) {
-+static int tex_rename_all(const tex_t *t, id<MTLTexture> base, id<MTLTexture> nt);   // every name of base moves to nt; returns whether t's own serial named base (the caller puts nt, or a view of it, under the serial otherwise)
 +static id<MTLTexture> tex_replace(const tex_t *t, id<MTLTexture> base, id<MTLTexture> nt, id<MTLTexture> view);   // tex_rename_all, then the serial's own name (its view made again on nt)
 +// The sRGB / linear view (tex_mtl_) this serial holds when `asked` is that view or its parent, else nil. Whoever replaces the parent (tex_upgrade, ups_demote, ups_promote) makes
 +// the view again on the replacement (tex_replace), so the pair keeps sharing its bytes
@@ -482,35 +466,20 @@ index 167c0ce..528bdb2 100644
      id<MTLTexture> base = view ? view.parentTexture : asked;
      if (base.isSparse) { RED_ONCE(149, "a placement sparse texture needs usage %#lx it was not made with (ser=%llu format %#x): kept as it is, not remade whole", (unsigned long)add, (unsigned long long)t->serial, t->d.format); return base; }
      MTLTextureDescriptor *d = [MTLTextureDescriptor new];
-@@ -2929,36 +3080,48 @@ static id<MTLTexture> tex_upgrade(const tex_t *t, id<MTLTexture> asked, MTLTextu
-     if ([holder isKindOfClass:[NvPkg class]]) { id<MTLTexture> old = ((NvPkg *)holder)->tex; ((NvPkg *)holder)->tex = upgraded; defer_obj_release(old); g_ser_gen++;
+@@ -2964,21 +3108,26 @@ static id<MTLTexture> tex_upgrade(const tex_t *t, id<MTLTexture> asked, MTLTextu
+     if ([holder isKindOfClass:[NvPkg class]]) { id<MTLTexture> old = ((NvPkg *)holder)->tex; ((NvPkg *)holder)->tex = upgraded; defer_obj_release(old); own_epoch();
          if (((NvPkg *)holder)->view) { defer_obj_unref(((NvPkg *)holder)->view); ((NvPkg *)holder)->view = nil; ((NvPkg *)holder)->vbase = 0; } }   // a sparse texture's view of the old one: bound whole until its next upload
      else {
 -        // Every name of the old texture moves to the upgraded one: other serials sharing its storage (live in g_by_serial, finalized in g_ghost) and the sharing table. Only the asking serial moved before,
--        // so the others kept reading the old copy while writes went to the new one, and the old texture stayed in g_alias_set. Slots are replaced in place (no insert, so no table resize during the walk);
--        // the old texture is retired once the submissions that used it complete, the view caches follow g_ser_gen (PR #107)
--        pthread_mutex_lock(&g_smu);
--        nvn_hmap *tables[] = {&g_by_serial, &g_ghost}; int named = 0, shared = 0;
--        for (unsigned j = 0; j < 2; j++) for (uint32_t i = 0; i < tables[j]->cap; i++) {
--            if (tables[j]->vals[i] != (__bridge void *)base) continue;
--            uint64_t serial; memcpy(&serial, tables[j]->keys + (size_t)i * tables[j]->klen, sizeof serial);
--            void *old = tables[j]->vals[i]; tables[j]->vals[i] = (void *)CFBridgingRetain(upgraded);
--            nvn_hmap *cnt = j == 0 ? &g_by_serial_held : &g_ghost_held; count_add(cnt, old, -1); count_add(cnt, (__bridge void *)upgraded, 1);   // the count moves with the name
--            CFRelease(old); named |= serial == t->serial;
--        }
--        for(uint32_t i=0;i<g_tex_pins.cap;i++) if(g_tex_pins.vals[i]) { tex_pin *pin=g_tex_pins.vals[i]; if(pin->object==(__bridge void *)base) tex_pin_set(pin,upgraded); }
--        for (uint32_t i = 0; i < g_alias.cap; i++) {
--            if (g_alias.vals[i] != (__bridge void *)base) continue;
--            void *old = g_alias.vals[i]; g_alias.vals[i] = (void *)CFBridgingRetain(upgraded); CFRelease(old); shared = 1;
--        }
--        if (shared) { CFSetRemoveValue(g_alias_set, (__bridge const void *)base); CFSetAddValue(g_alias_set, (__bridge const void *)upgraded); }
--        g_ser_gen++;
--        pthread_mutex_unlock(&g_smu);
+-        // so the others kept reading the old copy while writes went to the new one, and the old texture stayed shared. Slots are replaced in place (no insert, so no table resize during the walk);
+-        // the old texture is retired once the submissions that used it complete, the view caches follow g_ser_gen (PR #107). An sRGB / linear twin's view is made again on the upgraded
+-        // texture first and published in the rename's hold (own_upgrade), so no reader finds the serial's old view once its parent has left the sharing table
 -        if (view) {
--            id<MTLTexture> nv = [upgraded newTextureViewWithPixelFormat:view.pixelFormat textureType:view.textureType levels:NSMakeRange(0, upgraded.mipmapLevelCount) slices:NSMakeRange(0, upgraded.arrayLength) swizzle:view.swizzle];
+-            upgraded_view = [upgraded newTextureViewWithPixelFormat:view.pixelFormat textureType:view.textureType levels:NSMakeRange(0, upgraded.mipmapLevelCount) slices:NSMakeRange(0, upgraded.arrayLength) swizzle:view.swizzle];
 -            static int nview; if (nview++ < 4) MLOG("sRGB / linear view ser=%llu made again on its upgraded parent (%d so far)", (unsigned long long)t->serial, nview);
--            if (nv) { tex_put(t->serial, nv); upgraded_view = nv; } else RED_ONCE(151, "cannot make the sRGB / linear view ser=%llu again on its upgraded parent: it keeps the old storage", (unsigned long long)t->serial);
--        } else if (!named) tex_put(t->serial, upgraded);
+-            if (!upgraded_view) RED_ONCE(151, "cannot make the sRGB / linear view ser=%llu again on its upgraded parent: it keeps the old storage", (unsigned long long)t->serial);
+-        }
+-        own_upgrade(base, upgraded, t->serial, view ? upgraded_view : upgraded);   // the serial tables, the pins and the sharing table, a new epoch (nvn_owner.m)
 -        defer_obj_release(base);
 +        // Every name of the old texture moves to the upgraded one (tex_rename_all, the comment above it; shared with ups_demote and ups_promote); the serial that held an sRGB / linear
 +        // view gets the view made again on the upgraded parent (tex_replace)
@@ -519,45 +488,23 @@ index 167c0ce..528bdb2 100644
      MLOG("texture upgraded to allow %s ser=%llu base format %lu → view format %lu (upgrades=%llu)", add & MTLTextureUsageShaderWrite ? "image writes" : add & MTLTextureUsageRenderTarget ? "render-target use" : "format views", t->serial, (unsigned long)base.pixelFormat, (unsigned long)view_pf, ++g_pfv_upgrades);
      return upgraded_view ? upgraded_view : upgraded;
  }
-+// Every name of a non-packaged texture `base` moves to its replacement `nt` (tex_upgrade's usage upgrade, ups_demote's return to the game's size): other serials sharing its storage
-+// (live in g_by_serial, finalized in g_ghost) and the sharing table. Only the asking serial moved before, so the others kept reading the old copy while writes went to the new one,
-+// and the old texture stayed in g_alias_set. Slots are replaced in place (no insert, so no table resize during the walk); the old texture is retired once the submissions that used
-+// it complete, the view caches follow g_ser_gen (PR #107). The argument tables are not touched: a draw rebuilds them on the next pass (tex_fast_rid sees g_ser_gen)
-+static int tex_rename_all(const tex_t *t, id<MTLTexture> base, id<MTLTexture> nt) {
-+    pthread_mutex_lock(&g_smu);
-+    nvn_hmap *tables[] = {&g_by_serial, &g_ghost}; int named = 0, shared = 0;
-+    for (unsigned j = 0; j < 2; j++) for (uint32_t i = 0; i < tables[j]->cap; i++) {
-+        if (tables[j]->vals[i] != (__bridge void *)base) continue;
-+        uint64_t serial; memcpy(&serial, tables[j]->keys + (size_t)i * tables[j]->klen, sizeof serial);
-+        void *old = tables[j]->vals[i]; tables[j]->vals[i] = (void *)CFBridgingRetain(nt);
-+        nvn_hmap *cnt = j == 0 ? &g_by_serial_held : &g_ghost_held; count_add(cnt, old, -1); count_add(cnt, (__bridge void *)nt, 1);   // the count moves with the name (entry_holds)
-+        CFRelease(old); named |= serial == t->serial;
-+    }
-+    for(uint32_t i=0;i<g_tex_pins.cap;i++) if(g_tex_pins.vals[i]) { tex_pin *pin=g_tex_pins.vals[i]; if(pin->object==(__bridge void *)base) tex_pin_set(pin,nt); }
-+    for (uint32_t i = 0; i < g_alias.cap; i++) {
-+        if (g_alias.vals[i] != (__bridge void *)base) continue;
-+        void *old = g_alias.vals[i]; g_alias.vals[i] = (void *)CFBridgingRetain(nt); CFRelease(old); shared = 1;
-+    }
-+    if (shared) { CFSetRemoveValue(g_alias_set, (__bridge const void *)base); CFSetAddValue(g_alias_set, (__bridge const void *)nt); }
-+    g_ser_gen++;
-+    pthread_mutex_unlock(&g_smu);
-+    defer_obj_release(base);
-+    return named;   // the caller puts nt (or, in tex_upgrade, the view made again on it) under t's serial when base was not named by it
-+}
-+// tex_rename_all, then the serial's own name: when it held an sRGB / linear view of base (tex_held_view, passed as view), the view is made again on nt and put under it, so the
-+// pair keeps sharing its bytes (twin views); else nt goes under it when no other name did. Returns the new view, or nil
++// Every name of a non-packaged texture moves to its replacement, through the owner's serial, pin and sharing tables (own_upgrade).
++// When the asking serial held an sRGB / linear view, the view is made again on the replacement and published in the same hold.
 +static id<MTLTexture> tex_replace(const tex_t *t, id<MTLTexture> base, id<MTLTexture> nt, id<MTLTexture> view) {
-+    int named = tex_rename_all(t, base, nt);
-+    if (!view) { if (!named) tex_put(t->serial, nt); return nil; }
-+    id<MTLTexture> nv = [nt newTextureViewWithPixelFormat:view.pixelFormat textureType:view.textureType levels:NSMakeRange(0, nt.mipmapLevelCount) slices:NSMakeRange(0, nt.arrayLength) swizzle:view.swizzle];
-+    static int nview; if (nview++ < 4) MLOG("sRGB / linear view ser=%llu made again on its parent's replacement (%d so far)", (unsigned long long)t->serial, nview);
-+    if (nv) tex_put(t->serial, nv); else RED_ONCE(151, "cannot make the sRGB / linear view ser=%llu again on its parent's replacement: it keeps the old storage", (unsigned long long)t->serial);
++    id<MTLTexture> nv = nil;
++    if (view) {
++        nv = [nt newTextureViewWithPixelFormat:view.pixelFormat textureType:view.textureType levels:NSMakeRange(0, nt.mipmapLevelCount) slices:NSMakeRange(0, nt.arrayLength) swizzle:view.swizzle];
++        static int nview; if (nview++ < 4) MLOG("sRGB / linear view ser=%llu made again on its parent's replacement (%d so far)", (unsigned long long)t->serial, nview);
++        if (!nv) RED_ONCE(151, "cannot make the sRGB / linear view ser=%llu again on its parent's replacement: it keeps the old storage", (unsigned long long)t->serial);
++    }
++    own_upgrade(base, nt, t->serial, view ? nv : nt);
++    defer_obj_release(base);
 +    return nv;
 +}
  static id<MTLTexture> tex_upgrade_pfv(const tex_t *t, id<MTLTexture> base, MTLPixelFormat view_pf) { return tex_upgrade(t, base, MTLTextureUsagePixelFormatView, view_pf); }
  // Packaged texture upload: first take the stamp, then set read-only, then read the pool memory and deswizzle into a staging buffer, and blit into a new private texture.
  // The stamp comes first: a write that faults while the pages are being protected gets a generation above it and leaves its page writable, and its bytes may land after
-@@ -3756,7 +3919,8 @@ static id<MTLBuffer> zero_buf(size_t need) {
+@@ -3834,7 +3983,8 @@ static id<MTLBuffer> zero_buf(size_t need) {
      return zb;
  }
  static uint64_t g_tex_zeroed;
@@ -567,7 +514,7 @@ index 167c0ce..528bdb2 100644
      static int warned;
      if (!atomic_load(&g_sub_thread_set) || !on_sub_thread()) return;   // the upload batch belongs to the submit thread only
      MTLTextureType tt = mt.textureType;
-@@ -3787,7 +3951,8 @@ static void tex_zero_fill(id<MTLTexture> mt) {
+@@ -3887,7 +4037,8 @@ static void tex_zero_fill(id<MTLTexture> mt) {
      if (!bpp) { if (!warned++) MLOG("new-texture zeroing: pixel format %lu not cleared (compressed / unsupported)", (unsigned long)mt.pixelFormat); return; }
      NSUInteger slices = mt.arrayLength * (tt == MTLTextureTypeCube || tt == MTLTextureTypeCubeArray ? 6 : 1);
      size_t need = (size_t)mt.width * bpp * mt.height * mt.depth;   // level 0, one slice is the largest
@@ -577,7 +524,7 @@ index 167c0ce..528bdb2 100644
      id<MTLBuffer> zb = zero_buf(need); if (!zb) return;
      up_begin();
      for (NSUInteger l = 0; l < mt.mipmapLevelCount; l++) {
-@@ -4315,7 +4480,7 @@ static id<MTLTexture> image_texture(const tex_t *t, MTLTextureDescriptor *d0) {
+@@ -4424,7 +4575,7 @@ static id<MTLTexture> image_texture(const tex_t *t, MTLTextureDescriptor *d0) {
          // Initialize the whole family, including storage outside a first-used small resolution. Only a new heap is zeroed; later descriptors alias its existing bytes.
          id<MTLTexture> zero = largest == d ? mt : [owner->heap newTextureWithDescriptor:largest offset:0];
          if (!zero) return nil;
@@ -586,7 +533,7 @@ index 167c0ce..528bdb2 100644
      }
      return mt;
  }
-@@ -4490,10 +4655,14 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
+@@ -4623,10 +4774,14 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
      if (!mt) {
          MTLTextureDescriptor *d = tex_desc(t, 0);
          if (!d) return nil;
@@ -603,16 +550,16 @@ index 167c0ce..528bdb2 100644
      }
      if (mt.allocatedSize >= (256u << 20)) { static int nb; if (nb++ < 20)   // the textures that take most of the GPU's memory (a GPU out-of-memory error says nothing of which)
          MLOG("large texture ser=%llu %ux%ux%u format %#x target %d levels %u: %llu MB%s", (unsigned long long)t->serial, t->d.width, t->d.height, t->d.depth, t->d.format, t->d.target, t->d.levels,
-@@ -4507,7 +4676,7 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
-     hm_put_id(&g_alias, &ak, mt); CFSetAddValue(g_alias_set, (__bridge const void *)mt); nvn_hm_put(&g_alias_seen, &ak, (void *)(uintptr_t)(g_fence + 1));
-     pthread_mutex_unlock(&g_smu);
-     tex_put(t->serial, mt);
--    return mt;
-+    return mt;   // NOLINT(clang-analyzer-osx.cocoa.RetainCount): mt is held by the serial table (tex_put) and the alias table (hm_put_id); the analyzer loses the +1 through the bridged retains on the scaled-texture path (ups_pick) and reports a leak
+@@ -4638,7 +4793,7 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
+     // one the storage's serials share: this one is retired
+     id<MTLTexture> got = own_alias_publish(t->serial, &ak, mt);
+     if (got != mt) { static int nrace; if (nrace++ < 4) MLOG("texture ser=%llu made twice over one storage: the first one registered is shared (%d so far)", (unsigned long long)t->serial, nrace); defer_obj_release(mt); }
+-    return got;
++    return got;   // NOLINT(clang-analyzer-osx.cocoa.RetainCount): mt is held by the serial and alias tables (tex_put, own_alias_publish); the analyzer loses the +1 through the bridged retains on the scaled-texture path (ups_pick) and reports a leak
  }
  // Memory readout line (always on, low frequency, capped): resident memory, GPU allocated, deferred-release queue, residency set object count, registered memory pools / peak / tracking table capacity, cumulative texture re-uploads.
  // Purpose: pin down "crashes with no log". The system gives no notice before killing a process for memory, so only readouts left beforehand can show which number kept climbing.
-@@ -4661,7 +4830,8 @@ static void ts_boundary(void) {   // the end of a segment and the start of the n
+@@ -4782,7 +4937,8 @@ static void ts_boundary(void) {   // the end of a segment and the start of the n
  }
  static int enc_open(void) { return g_enc != nil; }
  // Target info of the current render pass: determined once from the attachments at rp_begin and shared by all draws in the pass (pipeline key, depth-stencil, viewport / scissor all depend only on it)
@@ -622,9 +569,9 @@ index 167c0ce..528bdb2 100644
  static int g_rp_layered;   // the pass about to open is for a vertex shader that writes the layer (draw → rp_begin_ex)
  // Slice-merged passes (DM_NVN_SLICE_MERGE, on by default; 0 off): consecutive passes that each draw into another layer of one level of the same array or cube texture,
  // with nothing between them but state, uniform updates and draws (no game barrier, clear, copy or dispatch: sm_scan), run as one layered pass. Each draw reaches its layer through a vertex
-@@ -5317,6 +5487,27 @@ static NSUInteger att_layers(MTLRenderPassAttachmentDescriptor *a, const view_t
-     if (has_v && v->set_layers && v->nlayers) n = MIN(n, (NSUInteger)v->nlayers);
-     return MAX(n, 1u);
+@@ -5486,6 +5642,27 @@ static MTLPixelFormat rt_view_fmt_predict(const tex_t *t, id<MTLTexture> base, c
+     if (has_v && rtv_upgradable(t, base, v, &want)) return want;
+     return rt_view_fmt(base, v, has_v);
  }
 +// Resolution upscaling of a pass being opened: its factor is that of its attachments (ups_of). A pass that mixes scaled and unscaled attachments covers the smaller (pass_dims), and is
 +// drawn at the factor of its first attachment, as a game's targets of one pass are all screen-sized or all not (logged once if not)
@@ -650,15 +597,15 @@ index 167c0ce..528bdb2 100644
  static void attach(MTLRenderPassAttachmentDescriptor *a, const tex_t *t, const view_t *v, int has_v) {
      id<MTLTexture> base = tex_mtl(t); sparse_gpu_wrote(t);
      // A texture made without render-target use (packaged or CPU-written, uploaded from its storage) drawn into: give it that use, as a clear of one does (clear_tex). Metal's validation
-@@ -5355,6 +5546,7 @@ static id<MTL4RenderCommandEncoder> rp_begin_ex_(int clear_only) {
-     g_enc_mode = clear_only; g_enc_geo_nocolor = g_geo_omit_colors; g_pass_swrite = g_pass_order = g_pass_late_res = 0; g_sm_pass = 0;
+@@ -5526,6 +5703,7 @@ static id<MTL4RenderCommandEncoder> rp_begin_ex_(int clear_only) {
      if (!R.has_rt) { RED_ONCE(3, "no render target set before the draw"); return nil; }
      if (g_imfit_npend) img_fit_upgrade();   // no pass is open here: the upgrade's copy may run (img_fit)
+     rt_view_upgrade_all(clear_only);   // as above: before any slot is attached (rt_view_upgrade_all)
 +    if (g_ups > 1) ups_demote_pass(clear_only);   // resolution upscaling: attachments that disagree on the factor are brought to the game's size first (their copies run here, before the pass)
      // The version of the attachment-range candidate is taken before capturing any attachment; if it changes during setup, there is no continuation.
      uint64_t reg0 = 0, ser0 = 0, dirty0 = 0;
      if (rt_range_on()) { reg0 = g_reg_gen; ser0 = g_ser_gen; }
-@@ -5532,6 +5724,7 @@ static id<MTL4RenderCommandEncoder> rp_begin_ex_(int clear_only) {
+@@ -5703,6 +5881,7 @@ static id<MTL4RenderCommandEncoder> rp_begin_ex_(int clear_only) {
             R.rt.has_dview && R.rt.dview.set_format ? R.rt.dview.format : 0, g_pass.dfmt, g_pass.sfmt, g_pass.hd, g_pass.hs, clear_only);
          if (dt || stt) g_pass.samples = (uint32_t)(dt ? dt : stt).sampleCount;
          pass_dims(pd, (NSUInteger)R.rt.n, &g_pass.tw, &g_pass.th);
@@ -666,7 +613,7 @@ index 167c0ce..528bdb2 100644
          if (rt_range_on()) { g_pass.reg_gen = reg0; g_pass.ser_gen = ser0; }
          if (rt_range_on()) { g_pass.range_dirty=dirty0; g_pass.range_color=pd.colorAttachments[0].texture; g_pass.range_depth=pd.depthAttachment.texture; }
          g_enc_pso = nil; g_enc_dss = nil; g_ed.ok = 0;
-@@ -5598,6 +5791,7 @@ static int clear_rect_zero(int i) {
+@@ -5770,6 +5949,7 @@ static int clear_rect_zero(int i) {
      NSUInteger lv = hv && v->set_levels ? v->base_level : 0, sl = hv && v->set_layers ? v->min_layer : 0;
      long lw = (long)MAX(mt.width >> lv, 1u), lh = (long)MAX(mt.height >> lv, 1u);
      long x0 = R.sc.x < 0 ? 0 : R.sc.x, y0 = R.sc.y < 0 ? 0 : R.sc.y, x1 = (long)R.sc.x + R.sc.w, y1 = (long)R.sc.y + R.sc.h;
@@ -674,7 +621,7 @@ index 167c0ce..528bdb2 100644
      if (x1 > lw) x1 = lw; if (y1 > lh) y1 = lh;
      if (x1 <= x0 || y1 <= y0) return 1;
      size_t row = (size_t)(x1 - x0) * bpp, img = row * (size_t)(y1 - y0);
-@@ -5729,6 +5923,7 @@ static void shmap_read(void) {
+@@ -5901,6 +6081,7 @@ static void shmap_read(void) {
      NSMutableDictionary *geo_mesh;   // a vertex shader's mesh entries by lean kernel key (geo_mesh_fn; NSNull: none)
      uint8_t up_mfx;   // a compute shader that is the game's own upscaler (DM_GAME_UPSCALER_KEYS, from the shader map): 0 not decided, 1 drawn by MetalFX when DM_UPSCALER=metalfx, 2 not one or one its colour keeps (up_mfx_wanted)
      uint8_t up_color;   // such a shader's colour, from its code at load with DM_UPSCALER=metalfx (up_mfx_color; UP_COLOR_UNREAD otherwise)
@@ -682,7 +629,7 @@ index 167c0ce..528bdb2 100644
      int gs_loc, lay_loc; char gs_comp, lay_comp;   // a slice-writing geometry shader (no function: the layer comes from input gs_loc.gs_comp) / a vertex shader with layer entry points writing output lay_loc.lay_comp (dmsh_build.py gs_slice, vs_layer_entry); -1 = none
      uint64_t cbs_seen; uint32_t cbs_runs;   // the command buffer that listed this shader last, and how many have (cbs_note)
      // The argument buffer encoded last time
-@@ -10200,6 +10395,9 @@ static id<MTLTexture> img_binding(int tid, const nvn_rbind *b, uint64_t *rid, in
+@@ -10767,6 +10948,9 @@ static id<MTLTexture> img_binding(int tid, const nvn_rbind *b, uint64_t *rid, in
  // An image bind may follow rendering into a texture created without IMAGE; upgrading it inside encode_args would
  // copy out of an attachment while its render pass was still open. Close that pass first, then replace the shared backing (all registered sampled views follow g_ser_gen).
  static uint32_t ubo_handle(int stage, int reg, int off); static int ubo_tex_id(uint32_t h);
@@ -692,7 +639,7 @@ index 167c0ce..528bdb2 100644
  static void image_prepare(NvProg *pr, unsigned stages) {
      if (!pr) return;
      if (!pr->c_img) { int any = 0;   // no written or atomic image slot in any stage: nothing to resolve, every draw
-@@ -10211,7 +10409,7 @@ static void image_prepare(NvProg *pr, unsigned stages) {
+@@ -10778,7 +10962,7 @@ static void image_prepare(NvProg *pr, unsigned stages) {
          if (!(stages & (1u << st))) continue;
          NvShader *sh = pr->sh[st]; if (!sh) continue;
          for (int i = 0; i < sh->rf.nb; i++) {
@@ -701,7 +648,7 @@ index 167c0ce..528bdb2 100644
              int tid = b->kind == NVN_RB_IMGU ? ubo_tex_id(ubo_handle(st, b->reg, b->off)) : (int)(S.img[st][b->reg] & 0xfffff); if (tid <= 0) continue;
              os_unfair_lock_lock(&g_rmu);
              if (tid >= g_ntreg || !g_treg[tid].ok || g_treg[tid].gone) { os_unfair_lock_unlock(&g_rmu); continue; }
-@@ -10220,7 +10418,13 @@ static void image_prepare(NvProg *pr, unsigned stages) {
+@@ -10787,7 +10971,13 @@ static void image_prepare(NvProg *pr, unsigned stages) {
              id<MTLTexture> base = tex_mtl(&image); sparse_gpu_wrote(&image); while (base.parentTexture) base = base.parentTexture;
              int reinterpret = b->atom && b->dpf != NVN_DPF_FLOAT && tex_atomic_alias(base);
              int upgrade = base && (!(base.usage & MTLTextureUsageShaderWrite) || reinterpret);
@@ -715,7 +662,7 @@ index 167c0ce..528bdb2 100644
              if (!upgrade) continue;
              rp_end();
              os_unfair_lock_lock(&g_rmu);
-@@ -10447,6 +10651,16 @@ static uint64_t gml_take(id<MTLBuffer> map) {
+@@ -11016,6 +11206,16 @@ static uint64_t gml_take(id<MTLBuffer> map) {
      [g_commit_blocks addObject:^{ gml_read(log->b, log->map, predict, fence); }];
      return b.gpuAddress;
  }
@@ -732,9 +679,9 @@ index 167c0ce..528bdb2 100644
  static id<MTLBuffer> zero_bank(void) { static __strong id<MTLBuffer> b; if (!b) { b = [g_dev newBufferWithLength:65536 options:MTLResourceStorageModeShared]; res_add(b); } return b; }
  static uint64_t zero_bank_gpu(void) { static uint64_t gpu; if (!gpu) gpu = zero_bank().gpuAddress; return gpu; }
  // Bindless handle (TEXU / SAMPU): the 32-bit word at byte offset off of uniform slot reg = the low 32 bits of the NVN handle the game wrote there (low 20 bits texture ID, high 12 bits sampler ID).
-@@ -10615,6 +10829,80 @@ static void cbs_feedback(cbs_list *l, NSError *err, const char *where) {   // fr
-         } }
-     free(l);
+@@ -11322,6 +11522,80 @@ static void cbs_fly_report(uint64_t fence) {
+     }
+     pthread_mutex_unlock(&g_cbs_mu);
  }
 +// ---------- Resolution upscaling: per-draw support buffers ----------
 +// The translator's TexelFetchScale / TextureSizeUnscale helpers (Ryujinx HelperFunctionManager.cs) read render_scale[1 + i] for the shader's i-th texture descriptor (the section
@@ -813,16 +760,16 @@ index 167c0ce..528bdb2 100644
  static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, int metal_vertex);
  static int encode_args(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, int metal_vertex) { cbs_note(sh); AP_B; int r = encode_args_(en, sh, nvn_stage, metal_vertex); AP_E(3); return r; }
  static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, int metal_vertex) {
-@@ -10637,6 +10925,8 @@ static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, i
-     if (bl) { bl_pass[nvn_stage] = g_stat_pass; PD("K %llu st%d key=%s nb=%d", g_stat_pass, nvn_stage, sh->key[0] ? sh->key : sh->builtin ? sh->builtin : "?", sh->rf.nb); }
+@@ -11359,6 +11633,8 @@ static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, i
      uint32_t bmask = 0; float bk[DMSH_BORDER_SAMPLERS][4];   // the border colour block (see nvn_border.h): the twins that correct, their factors
+     uint32_t tbias[DMSH_TBIAS_SLOTS] = {0}; int tbias_aid = -1;   // the offset table (dmsh_abi.h DMSH_TBIAS_BANK): each buffer image's element offset (tbias_view), and its slot
      os_unfair_lock_lock(&g_rmu);   // The texture / sampler registration tables may be being grown or rewritten by the game thread
 +    ups_vec uv; int ups_on = g_ups > 1 && (nvn_stage == 0 || nvn_stage == 1 || nvn_stage == 5);   // resolution upscaling: the stages the translator scales fetches in (vertex, fragment, compute)
 +    if (ups_on) ups_vec_build(sh, nvn_stage, &uv);
      for (int i = 0; i < sh->rf.nb; i++) {
          const nvn_rbind *b = &sh->rf.b[i];
          int reg = b->reg, aid = b->aid;
-@@ -10827,8 +11117,10 @@ static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, i
+@@ -11557,8 +11833,10 @@ static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, i
              if (b->kind == NVN_RB_GMEM) gmem_aid = aid; else gml_taken = 1;
              if (bl && b->kind == NVN_RB_GMEM) PD("B %llu st%d gmem %s", g_stat_pass, nvn_stage, b->rw ? "rw" : "ro");
          } else if (b->kind == NVN_RB_SUPPORT) {   // support_buffer: scale 1.0, BGRA swap 0, viewport transform not disabled (viewport fields are not read)
@@ -832,10 +779,10 @@ index 167c0ce..528bdb2 100644
 +            else if (g_pass.ups > 1 && g_enc && nvn_stage != 5 && nvn_stage != 2) { slots[aid] = support_scaled_gpu(); USE(support_buf_scaled(), MTLResourceUsageRead); }   // a geometry / tessellation draw on scaled attachments
 +            else { slots[aid] = support_gpu();
 +            USE(support_buf(), MTLResourceUsageRead); }
-         } else if (b->kind == NVN_RB_CBSIZE) {   // the uniform slots' bound sizes (DMSH_CBSIZE_BANK), which the translator's reads compare with: a read past its slot's size gives 0, as on Maxwell
-             id<MTLBuffer> db; size_t doff = arena_alloc(16 * ((DMSH_CBSIZE_SLOTS + 3) / 4), &db); uint32_t *d = (uint32_t *)(g_cur_arena->cpu + doff);
-             memset(d, 0, 16 * ((DMSH_CBSIZE_SLOTS + 3) / 4));   // a slot with nothing bound reads the zero bank (above) and gets 0 here too
-@@ -11031,8 +11323,10 @@ static int ds_scan(const uint8_t *p, ds_st *ds, int depth) {
+         } else if (b->kind == NVN_RB_CBSIZE) {   // the uniform slots' bound sizes (cbsize_table)
+             id<MTLBuffer> db; slots[aid] = cbsize_table(nvn_stage, &db); USE(db, MTLResourceUsageRead);
+         } else if (b->kind == NVN_RB_TBIAS) {   // the buffer images' element offsets: filled once every image is bound, below
+@@ -11768,8 +12046,10 @@ static int ds_scan(const uint8_t *p, ds_st *ds, int depth) {
              case OP_SET_RT: case OP_COPY_B2B: case OP_CLEAR_BUF: case OP_UPDATE_UB: case OP_COPY_B2T: case OP_COPY_T2B: case OP_COPY_T2T: case OP_DRAW_TEX: case OP_CLEAR_TEX: case OP_DISPATCH: return DS_FREE;
              case OP_CLEAR_COLOR: case OP_CLEAR_DS: case OP_DLSS: g_ds_why = h.op; return DS_USED;
              case OP_BIND_STATE: { const p_bind_state *b = a; if (b->kind == 5) memcpy(ds, b->bytes, sizeof *ds); break; }
@@ -848,7 +795,7 @@ index 167c0ce..528bdb2 100644
                  if (g_ds_need == 3) { g_ds_why = 1000 + ds->dt * 100 + ds->dw * 10 + ds->st; return DS_USED; } break;
              default: break;
          }
-@@ -11511,7 +11805,7 @@ static int draw_samples_rt(NvProg *pr) {   // Sampled attachments keep the origi
+@@ -12264,7 +12544,7 @@ static int draw_samples_rt(NvProg *pr) {   // Sampled attachments keep the origi
  // The whole render pass's need for depth / stencil (bits: 1 depth 2 stencil; 3 = both needed or cannot be proven). Starting from the draw that opens the render pass, scan in real replay order to the end of the render pass:
  // the attached clears and this draw's state are counted first; later draws accumulate by their depth-stencil state; anything unprovable such as a mid-pass clear or nesting too deep is treated as both needed
  static int pass_ds_need(void) {
@@ -857,15 +804,15 @@ index 167c0ce..528bdb2 100644
      if (!R.rt.depth || need == 3 || !g_exec_next || g_ret_n > 16) {
          PD("S %llu no lookahead depth=%d clear_d=%d clear_s=%d dt=%d dw=%d st=%d next=%d ret=%d", g_stat_pass + 1, R.rt.depth != NULL, R.clear_d, R.clear_s, (int)S.ds.dt, (int)S.ds.dw, (int)S.ds.st, g_exec_next != NULL, g_ret_n);
          return 3;
-@@ -13262,6 +13556,7 @@ static int lc_keeps(uint32_t op) {
- static void dispatch(const p_dispatch *dp, const uint8_t *next);
+@@ -14016,6 +14296,7 @@ static int lc_keeps(uint32_t op) {
+ static void dispatch(const p_dispatch *dp);
  static int up_mfx_wanted(NvShader *cs); static int up_mfx_encode(NvShader *cs);   // a game's upscaler through MetalFX (see up_mfx_encode)
  static int ndve_engine_dispatch(NvShader *cs, const p_dispatch *dp);   // nn::ndve's movie network as the host's kernels (DM_NDVE_ENGINE=1, nvn_ndve.inc)
 +static int ups_bypass_encode(NvShader *cs);   // resolution upscaling: a game's upscaler reading a scaled scene, resolved by the host (see ups_bypass_encode)
  // ---------- Compute dispatches moved ahead of the render pass they would split (DM_NVN_CS_HOIST) ----------
  // Metal cannot run a compute dispatch inside a render pass, so a dispatch between two draws of one pass ends it, and on a tile-based GPU every attachment is stored and loaded again:
  // Breath of the Wild runs one GPU particle dispatch per emitter between the G-buffer's effect draws, six to eight splits of a 1600x900 G-buffer a frame (about 350 MB of attachment
-@@ -13552,7 +13847,14 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
+@@ -14306,7 +14587,14 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
      if (!g_enc && tbdr_on() && !g_geo_program && !defer_has_in_p() && !g_defer_replaying && !g_fz.active && !g_fz_checking && g_exec_next) { defer_try(dw, di); if (g_defer_cur->active && g_defer_cur->in_p) return; }
      if (!g_enc && tbdr_on() && !g_fz_checking && !g_geo_program) fuse_try();   // Readable tile render pass merge is on by default; when the structure / same-pixel proof does not hold it still falls back to a normal render pass, and it is not re-entered during the CHECK redraw
      if (!g_enc && !tbdr_on() && !g_geo_program && cshoist_on()) cs_hoist_try(pr, dw, di);   // see DM_NVN_CS_HOIST
@@ -881,7 +828,7 @@ index 167c0ce..528bdb2 100644
      int skip_d = mode != 0;
      if (!g_enc) { g_fd_dw = dw; g_fd_di = di; }
      g_rp_layered = pr->sh[0] && pr->sh[0]->layer_out;
-@@ -13605,6 +13907,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
+@@ -14364,6 +14652,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
      // Viewport / scissor (clamped within the target size)
      NSUInteger tw = g_pass.tw, th = g_pass.th;
      { MTLViewport v = S.has_vp ? (MTLViewport){S.vp[0][0], S.vp[0][1], S.vp[0][2], S.vp[0][3], S.dr[0], S.dr[1]} : (MTLViewport){0, 0, tw, th, 0, 1};
@@ -889,7 +836,7 @@ index 167c0ce..528bdb2 100644
        if (atomic_load_explicit(&g_origin_ll, memory_order_relaxed)) { v.originY += v.height; v.height = -v.height; }   // lower-left origin (see g_origin_ll)
        // Viewport swizzle: NEGATIVE_Y negates clip y, the same as the viewport flipped about its centre; facing is decided after it on the GPU as in Metal, so the winding stays.
        // Other swizzles (axis exchanges, negated x / z / w) are no viewport change and are drawn unswizzled
-@@ -13615,6 +13918,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
+@@ -14374,6 +14663,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
      MTLScissorRect sc = {0, 0, tw, th};
      if (R.has_sc && !S.rast_discard) {   // raster state cannot suppress vertex storage writes
          long x0 = R.sc.x < 0 ? 0 : R.sc.x, y0 = R.sc.y <= 0 ? 0 : R.sc.y, x1 = (long)R.sc.x + R.sc.w, y1 = (long)R.sc.y + R.sc.h;
@@ -897,7 +844,7 @@ index 167c0ce..528bdb2 100644
          if (x1 > (long)tw) x1 = tw; if (y1 > (long)th) y1 = th;
          if (x1 <= x0 || y1 <= y0) { PD("Z %llu draw skipped: empty scissor (%d,%d %dx%d, target %lux%lu)", g_stat_pass, R.sc.x, R.sc.y, R.sc.w, R.sc.h, (unsigned long)tw, (unsigned long)th); return; }
          sc = (MTLScissorRect){(NSUInteger)x0, (NSUInteger)y0, (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)};
-@@ -13638,6 +13942,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
+@@ -14397,6 +14687,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
          if (pr->sh[0]) vconv_bind(en, pr->sh[0], S.rast_discard, g_geo_vrange ? g_geo_vrange : dw, g_geo_vrange ? NULL : di);   // integer inputs fed float-type formats or 8 / 16-bit integers of the other sign (see vconv_ncomp, vconv_int); a lean geometry draw: the vertices its indices name
      }
      g_kd_force = kd_draw(pr, dw, di);
@@ -905,7 +852,7 @@ index 167c0ce..528bdb2 100644
      if (pr->sh[0]) encode_args(en, pr->sh[0], 0, 1);
      if (pr->sh[1] && !S.rast_discard) encode_args(en, pr->sh[1], 1, 0);
      // Binding a texture view can upgrade its texture first (tex_upgrade: a format view of a texture made without PixelFormatView), and the upgrade's copy goes through blit(),
-@@ -13666,7 +13971,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
+@@ -14425,7 +14716,7 @@ static void draw_(const p_draw *dw, const p_draw_idx *di) {
                  if (g_vis_n >= VIS_SLOTS) RED_ONCE(35, "visibility slots exhausted");
                  else { g_vis_cur = (int)g_vis_n++; g_vis_cur_pass = g_pass.serial;
                      if (g_nvs == g_vscap) { g_vscap = g_vscap ? g_vscap * 2 : 64; g_vs = realloc_or_die(g_vs, g_vscap * sizeof *g_vs, "the visibility slots"); }
@@ -914,15 +861,15 @@ index 167c0ce..528bdb2 100644
              }
              if (g_vis_cur >= 0 && g_enc_vis != g_vis_cur + 1) { enc_r_visibility(en, MTLVisibilityResultModeCounting, (NSUInteger)g_vis_cur * 8); g_enc_vis = g_vis_cur + 1; }
          }
-@@ -14032,6 +14337,7 @@ static void dispatch(const p_dispatch *dp, const uint8_t *next) {
-     image_prepare(program, 0x20);
+@@ -14779,6 +15070,7 @@ static void dispatch(const p_dispatch *dp) {
+     image_prepare(prog_get(S.cprog), 0x20);
      if (ndve_engine_dispatch(cs, dp)) return;   // nn::ndve's movie network as the host's kernels (DM_NDVE_ENGINE=1)
      if (up_mfx_wanted(cs) && !dp->ind && up_mfx_encode(cs)) return;   // the game's upscaler, drawn by MetalFX instead (DM_UPSCALER=metalfx)
 +    if (g_ups > 1 && !dp->ind && ups_bypass_encode(cs)) return;   // resolution upscaling: the game's upscaler reading a scene the host made larger than its output: resolved by the host (DM_UPSCALE_GAME)
      // Threadgroup memory past Metal's 32 KB, in a device buffer (dmsh_rewrite.py tg_spill): a slice for every workgroup of the grid. An indirect dispatch's grid is in GPU memory, written earlier
      // in the frame: the replay waits for the GPU (as an indirect-count multi-draw does, mdi_wait) and reads it. Mario Kart World's spilled dispatches are all direct, of 1 to 3 workgroups
      uint64_t tg_groups = 0;
-@@ -14104,6 +14410,135 @@ static int rb_swap_gpu(uint64_t src, size_t row, size_t img, uint64_t dst, size_
+@@ -14847,6 +15139,135 @@ static int rb_swap_gpu(uint64_t src, size_t row, size_t img, uint64_t dst, size_
  // Whether a copy into or out of this host texture crosses between the guest's order and Metal's for the RGB565 family: the red bit position (rb_packed_shift), 0 for other formats and for a
  // texture on a pool's buffer, which holds the guest's bits (linear and buffer textures)
  static int rb_copy_shift(const tex_t *t, id<MTLTexture> mt) { return mt.buffer ? 0 : rb_packed_shift(t->d.format); }
@@ -1058,7 +1005,7 @@ index 167c0ce..528bdb2 100644
  static void copy_t2b(const p_copy_b2t *c, uint32_t size) {
      rp_flush();   // Materialize pending clears before reading, matching copy_t2t.
      g_wr_epoch++; g_mdx_epoch++;
-@@ -14120,6 +14555,16 @@ static void copy_t2b(const p_copy_b2t *c, uint32_t size) {
+@@ -14863,6 +15284,16 @@ static void copy_t2b(const p_copy_b2t *c, uint32_t size) {
      void *mb; uint64_t mo;
      if (!mtl_addr(c->src, img * nz, &mb, &mo)) { RED_ONCE(31, "texture→buffer copy destination is in no memory pool"); return; }
      sbw_note(c->src, img * nz, SBW_GPU);
@@ -1075,7 +1022,7 @@ index 167c0ce..528bdb2 100644
      id<MTL4ComputeCommandEncoder> b = blit();
      if (is3d)
          enc_b_copy_texture_buffer(b, t, 0, level, MTLOriginMake(c->r.xoffset, c->r.yoffset, c->r.zoffset), MTLSizeMake(c->r.width, c->r.height, nz), (__bridge id<MTLBuffer>)mb, mo, row, img);
-@@ -14187,6 +14632,23 @@ void mtl_read_texels(const tex_t *t, unsigned level, unsigned layer0, const NVNc
+@@ -14930,6 +15361,23 @@ void mtl_read_texels(const tex_t *t, unsigned level, unsigned layer0, const NVNc
      id<MTLTexture> mt = tex_mtl(t);
      if (!mt || !tex_level_ok(mt, level, "CPU readback")) { memset(dst, 0, img * nz); return; }
      mtl_finish_gpu_at(WS_READTEX);
@@ -1099,7 +1046,7 @@ index 167c0ce..528bdb2 100644
      id<MTLBuffer> buf = [g_dev newBufferWithLength:wb * hb * nz options:MTLResourceStorageModeShared];
      id<MTLCommandBuffer> cb = q_cb(); id<MTLBlitCommandEncoder> b = enc_b_begin(cb);
      for (int z = 0; z < nz; z++)
-@@ -14215,7 +14677,8 @@ static size_t mtl_pf_block_bytes(MTLPixelFormat pf) {   // bytes per texel, or p
+@@ -14958,7 +15406,8 @@ static size_t mtl_pf_block_bytes(MTLPixelFormat pf) {   // bytes per texel, or p
      return mtl_pf_bytes(pf);
  }
  static void copy_b2t(const p_copy_b2t *c, uint32_t size) {
@@ -1109,7 +1056,7 @@ index 167c0ce..528bdb2 100644
      id<MTLTexture> t = tex_mtl(c->tex); sparse_gpu_wrote(c->tex);
      if (!t) { PD("C ser=%llu (no host texture)", c->tex->serial); return; }
      int bw, bh, bpb = nvn_fmt_bpb(c->tex->d.format, &bw, &bh);
-@@ -14241,6 +14704,18 @@ static void copy_b2t(const p_copy_b2t *c, uint32_t size) {
+@@ -14984,6 +15433,18 @@ static void copy_b2t(const p_copy_b2t *c, uint32_t size) {
          if (rb_swap_gpu(sb.gpuAddress + mo, row, img, ab.gpuAddress + ao, wb, wb * rows, wb, rows, nz, shift)) { sb = ab; mo = ao; row = wb; img = wb * rows; }
          else RED_ONCE(7, "RGB565-family buffer→texture copy left in the guest's order: red and blue exchanged");
      }
@@ -1128,7 +1075,7 @@ index 167c0ce..528bdb2 100644
      id<MTL4ComputeCommandEncoder> b = blit();
      if (is3d)
          enc_b_copy_buffer_texture(b, sb, mo, row, img, MTLSizeMake(c->r.width, c->r.height, nz), t, 0, level, MTLOriginMake(c->r.xoffset, c->r.yoffset, c->r.zoffset));
-@@ -14270,21 +14745,25 @@ static int fmt_int_or_ds(MTLPixelFormat f) {
+@@ -15013,21 +15474,25 @@ static int fmt_int_or_ds(MTLPixelFormat f) {
      }
  }
  static int copy_t2t_draw(id<MTLTexture> s, id<MTLTexture> d, unsigned sl, unsigned ss, unsigned dl, unsigned ds, const NVNcopyRegion *sr, const NVNcopyRegion *dr, int linear, int mirror) {
@@ -1157,7 +1104,7 @@ index 167c0ce..528bdb2 100644
          pso = [NSMutableDictionary dictionary];
      }
      // Stencil: read through a stencil-only view of the source (one per layer below); without one it is cleared to 0
-@@ -14293,7 +14772,7 @@ static int copy_t2t_draw(id<MTLTexture> s, id<MTLTexture> d, unsigned sl, unsign
+@@ -15036,7 +15501,7 @@ static int copy_t2t_draw(id<MTLTexture> s, id<MTLTexture> d, unsigned sl, unsign
      NSNumber *pk = @(d.pixelFormat * 2 + scopy);
      id<MTLRenderPipelineState> ps = pso[pk];
      if (!ps) {
@@ -1166,7 +1113,7 @@ index 167c0ce..528bdb2 100644
          if (depth) { pd.depthAttachmentPixelFormat = d.pixelFormat; if (stencil) pd.stencilAttachmentPixelFormat = d.pixelFormat; } else pd.colorAttachments[0].pixelFormat = d.pixelFormat;
          NSError *e = nil; ps = [g_dev newRenderPipelineStateWithDescriptor:pd error:&e];
          if (!ps) { RED_ONCE(83, "format-converting / scaling texture copy: cannot create the pipeline for destination format %lu: %s", (unsigned long)d.pixelFormat, e.localizedDescription.UTF8String); return 0; }
-@@ -14490,6 +14969,14 @@ static id<MTLTexture> copy_t2t_enc(const p_copy_t2t *c) {
+@@ -15209,6 +15674,14 @@ static id<MTLTexture> copy_t2t_enc(const p_copy_t2t *c) {
      if (bc_alias_copy(c, s, sl, sz0, dl, dz0)) return nil;   // the destination aliases a compressed texture: the bytes go there, and the alias's own texture is not made (see bc_alias_copy)
      id<MTLTexture> d = tex_mtl(c->dst); sparse_gpu_wrote(c->dst);
      if (!d || !tex_level_ok(d, dl, "texture copy destination")) return nil;
@@ -1181,7 +1128,7 @@ index 167c0ce..528bdb2 100644
      if (c->flags & DM_COPY_RESOLVE) {   // Downsample: multisample resolve into the single-sample destination (depth takes sample 0); with equal sample counts it is a plain whole copy
          if (s.sampleCount == d.sampleCount && s.pixelFormat == d.pixelFormat && s.width == d.width && s.height == d.height) {
              enc_b_copy_texture(blit(), s, sz0, sl, MTLOriginMake(0, 0, 0), MTLSizeMake(s.width, s.height, 1), d, dz0, dl, MTLOriginMake(0, 0, 0));
-@@ -14524,7 +15011,8 @@ static id<MTLTexture> copy_t2t_enc(const p_copy_t2t *c) {
+@@ -15243,7 +15716,8 @@ static id<MTLTexture> copy_t2t_enc(const p_copy_t2t *c) {
      // The draw path renders into the destination: one made without render-target use (packaged) gets it first, as a whole-level clear does (Paper Mario: The Thousand-Year Door copies a
      // 128x128 RGBA8 render target into an RG8 texture, mirrored in Y)
      if ((c->sr.width != c->dr.width || c->sr.height != c->dr.height || s.pixelFormat != d.pixelFormat || (c->flags & (NVN_COPY_FLAGS_MIRROR_X_BIT | NVN_COPY_FLAGS_MIRROR_Y_BIT))) && !s3 && !d3
@@ -1191,7 +1138,7 @@ index 167c0ce..528bdb2 100644
          d = tex_upgrade(c->dst, d, MTLTextureUsageRenderTarget, d.pixelFormat);
      if ((c->sr.width != c->dr.width || c->sr.height != c->dr.height || s.pixelFormat != d.pixelFormat || (c->flags & (NVN_COPY_FLAGS_MIRROR_X_BIT | NVN_COPY_FLAGS_MIRROR_Y_BIT))) && !s3 && !d3
          && (c->sr.depth ? c->sr.depth : 1) == (c->dr.depth ? c->dr.depth : 1)
-@@ -14552,6 +15040,17 @@ static id<MTLTexture> copy_t2t_enc(const p_copy_t2t *c) {
+@@ -15271,6 +15745,17 @@ static id<MTLTexture> copy_t2t_enc(const p_copy_t2t *c) {
      }
      if (c->sr.width != c->dr.width || c->sr.height != c->dr.height || (c->sr.depth ? c->sr.depth : 1) != (c->dr.depth ? c->dr.depth : 1) || (c->flags & ~NVN_COPY_FLAGS_ENGINE_2D_BIT & ~NVN_COPY_FLAGS_LINEAR_FILTER_BIT)
          || s.pixelFormat != d.pixelFormat || s3 != d3) {
@@ -1209,7 +1156,7 @@ index 167c0ce..528bdb2 100644
          RED_ONCE(33, "texture→texture copy case not implemented: %dx%dx%d→%dx%dx%d flags %#x format %lu→%lu 3D %d→%d", c->sr.width, c->sr.height, c->sr.depth, c->dr.width, c->dr.height, c->dr.depth,
                   c->flags, (unsigned long)s.pixelFormat, (unsigned long)d.pixelFormat, s3, d3);
          return nil;
-@@ -14709,6 +15208,7 @@ static void clear_tex(const p_clear_tex *c) {
+@@ -15437,6 +15922,7 @@ static void clear_tex(const p_clear_tex *c) {
      id<MTLTexture> whole = t.parentTexture ? t.parentTexture : t;
      MTLPixelFormat pf = t.pixelFormat;
      int depth = pf == MTLPixelFormatDepth32Float || pf == MTLPixelFormatDepth16Unorm || pf == MTLPixelFormatDepth32Float_Stencil8, stencil = pf == MTLPixelFormatStencil8 || pf == MTLPixelFormatDepth32Float_Stencil8;
@@ -1217,7 +1164,7 @@ index 167c0ce..528bdb2 100644
      if (c->r.xoffset || c->r.yoffset || (NSUInteger)c->r.width != w || (NSUInteger)c->r.height != h || (c->mask & mtl_pf_chmask(pf)) != mtl_pf_chmask(pf)
          || !(t.usage & MTLTextureUsageRenderTarget)) {
          if (!depth && !stencil && (t.usage & MTLTextureUsageRenderTarget)) {
-@@ -14856,6 +15356,7 @@ static int clr_scissor(MTLScissorRect *sc) {   // the clear's scissor in the ope
+@@ -15584,6 +16070,7 @@ static int clr_scissor(MTLScissorRect *sc) {   // the clear's scissor in the ope
      NSUInteger tw = g_pass.tw, th = g_pass.th; *sc = (MTLScissorRect){0, 0, tw, th};
      if (!R.has_sc) return tw && th;
      long x0 = R.sc.x < 0 ? 0 : R.sc.x, y0 = R.sc.y < 0 ? 0 : R.sc.y, x1 = (long)R.sc.x + R.sc.w, y1 = (long)R.sc.y + R.sc.h;
@@ -1225,7 +1172,7 @@ index 167c0ce..528bdb2 100644
      if (x1 > (long)tw) x1 = (long)tw; if (y1 > (long)th) y1 = (long)th;
      if (x1 <= x0 || y1 <= y0) return 0;
      *sc = (MTLScissorRect){(NSUInteger)x0, (NSUInteger)y0, (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)}; return 1;
-@@ -14878,8 +15379,10 @@ static void clr_tri(id<MTL4RenderCommandEncoder> en, id<MTLRenderPipelineState>
+@@ -15606,8 +16093,10 @@ static void clr_tri(id<MTL4RenderCommandEncoder> en, id<MTLRenderPipelineState>
  static void clear_tex_tri(id<MTLTexture> t, unsigned lv, unsigned l0, const p_clear_tex *c) {
      int mask = c->mask & mtl_pf_chmask(t.pixelFormat); if (!mask) return;
      NSUInteger w = MAX(t.width >> lv, 1u), h = MAX(t.height >> lv, 1u);
@@ -1238,7 +1185,7 @@ index 167c0ce..528bdb2 100644
      if (x1 <= x0 || y1 <= y0) return;
      int kind = pf_int_kind(t.pixelFormat);
      clr_key k = {0}; k.kind = kind; k.mask = mask; k.cfmt[0] = t.pixelFormat; k.samples = t.sampleCount;
-@@ -15789,6 +16292,112 @@ static int up_mfx_encode(NvShader *cs) {
+@@ -16539,6 +17028,112 @@ static int up_mfx_encode(NvShader *cs) {
                              (unsigned long)out.pixelFormat, direct ? ", straight" : srgb ? ", through RGBA16F, decoded from sRGB" : ", through RGBA16F");
      return 1;
  }
@@ -1351,7 +1298,7 @@ index 167c0ce..528bdb2 100644
  // The present pass: src's valid rectangle drawn into dst (the drawable, or a screenshot's texture) as present_encode draws it, through MetalFX first where fx_encode takes it
  // (fx: the scaler state to use, nil = bilinear). uvb: the pass's crop constants (one buffer per present allocator, written by the CPU)
  static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst, const int crop[4], id<MTLBuffer> uvb, fx_state *fx) {
-@@ -15880,6 +16489,11 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
+@@ -16630,6 +17225,11 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
      // shape (1280x720 handheld, 1920x1080 docked)
      { static double last; double w, h; present_shape(src, &w, &h); double a = w / h;
        if (fabs(a - last) > last * 0.001) { last = a; MLOG("present: picture shape %.0fx%.0f (%.3f:1) for the front end's layout", w, h, a); front_picture_shape((int)w, (int)h); } }
@@ -1363,7 +1310,7 @@ index 167c0ce..528bdb2 100644
      // A texture made on first resolution joins the residency set (res_add), which a submission commits; a window texture presented before any submission has used it was still
      // outside the committed set when the display command buffer sampled it. Super Smash Bros. Ultimate presents its window texture in its first frames before drawing into it:
      // the display queue page-faulted (kIOGPUCommandBufferCallbackErrorPageFault) and macOS then ignored every later command buffer of the process, so the window stayed pink
-@@ -16378,7 +16992,9 @@ static uint64_t present_enqueue(const tex_t *t, double period, const int crop[4]
+@@ -17129,7 +17729,9 @@ static uint64_t present_enqueue(const tex_t *t, double period, const int crop[4]
      tex_t snap; uint64_t ss = 0; int slot = 0;
      if (!ev_val && mtl_snap_on()) {
          slot = (int)(atomic_load(&g_snap_next) % (uint64_t)g_snap_n);
@@ -1537,10 +1484,10 @@ index 0000000..fd8f6b9
 +    return ao > ai * 0.99 && ao < ai * 1.01;
 +}
 diff --git a/dm/gfx/tests/Makefile b/dm/gfx/tests/Makefile
-index 2bee53d..d89015c 100644
+index 9f1cf34..99d3e9f 100644
 --- a/dm/gfx/tests/Makefile
 +++ b/dm/gfx/tests/Makefile
-@@ -81,6 +81,8 @@ t_cover: t_cover.c ../nvn/nvn_cover.h
+@@ -82,6 +82,8 @@ t_cover: t_cover.c ../nvn/nvn_cover.h
  	clang -O1 -Wall -o $@ t_cover.c
  t_pace: t_pace.c ../nvn/nvn_pace.h
  	clang -O1 -Wall -o $@ t_pace.c
@@ -1549,7 +1496,7 @@ index 2bee53d..d89015c 100644
  t_timestamp: t_timestamp.c ../nvn/nvn_timestamp.h
  	$(CC) -std=c11 -O2 -g -Wall -Wextra -Werror -o $@ $<
  t_counter_clock: t_counter_clock.m ../../host/hle_os.c ../../host/dm.h $(MTL_T_DEP)
-@@ -490,6 +492,15 @@ check_t_upscaler_mfx: t_upscaler_mfx
+@@ -523,6 +525,15 @@ check_t_upscaler_mfx: t_upscaler_mfx
  	DM_NVN_ENC_THREAD=0 DM_UPSCALER=metalfx ./t_upscaler_mfx
  	DM_NVN_ENC_THREAD=1 DM_UPSCALER=metalfx ./t_upscaler_mfx
  	MTL_DEBUG_LAYER=1 ./t_upscaler_mfx
@@ -1579,22 +1526,22 @@ index 3fb83c1..4eee4b7 100644
          CHECK(!mtl_last_commit_error(), "production clear completes without GPU error");
          id<MTLTexture> stencil = [base newTextureViewWithPixelFormat:MTLPixelFormatX32_Stencil8];
 diff --git a/dm/gfx/tests/t_upgrade_alias.m b/dm/gfx/tests/t_upgrade_alias.m
-index 8cdde5f..e8c506f 100644
+index 65f8e71..a10e4ae 100644
 --- a/dm/gfx/tests/t_upgrade_alias.m
 +++ b/dm/gfx/tests/t_upgrade_alias.m
-@@ -28,8 +28,12 @@ int main(void) { @autoreleasepool {
-     uint64_t extra = 99400;
-     while ((g_by_serial.n + 1) * 4 <= g_by_serial.cap * 3) { hm_put_id(&g_by_serial, &extra, old); extra++; }
-     uint32_t capacity = g_by_serial.cap, count = g_by_serial.n;
+@@ -29,10 +29,12 @@ int main(void) { @autoreleasepool {
+     pthread_mutex_lock(&g_smu); own_stats st = own_stats_locked(); pthread_mutex_unlock(&g_smu);
+     while ((st.live + 1) * 4 <= st.live_cap * 3) { tex_put((1ull << 62) + extra, old); extra++; pthread_mutex_lock(&g_smu); st = own_stats_locked(); pthread_mutex_unlock(&g_smu); }   // live entries (external serials), counted as the owner counts them
+     uint32_t capacity = st.live_cap, count = st.live;
 +    mtl_tex_pin(a.serial); mtl_tex_pin(ghost.serial);
      id<MTLTexture> upgraded = tex_upgrade_pfv(&a, old, MTLPixelFormatR32Uint);
      CHECK(upgraded && upgraded != old, "usage upgrade creates a replacement");
-+    CHECK(((tex_pin *)nvn_hm_get(&g_tex_pins, &a.serial))->object == (__bridge void *)upgraded, "a queued live serial pins the replacement");
-+    CHECK(((tex_pin *)nvn_hm_get(&g_tex_pins, &ghost.serial))->object == (__bridge void *)upgraded, "a queued finalized serial pins the replacement");
+     pthread_mutex_lock(&g_smu); st = own_stats_locked(); pthread_mutex_unlock(&g_smu);
+     CHECK(st.live_cap == capacity && st.live == count, "replacement does not grow or reshape the serial table");
 +    mtl_tex_unpin(a.serial); mtl_tex_unpin(ghost.serial);
-     CHECK(g_by_serial.cap == capacity && g_by_serial.n == count, "replacement does not grow or reshape the serial table");
-     int all = 1; for (uint64_t serial = 99400; serial < extra; serial++) all &= tex_get(serial) == upgraded;
+     int all = 1; for (uint64_t serial = 99400; serial < extra; serial++) all &= tex_get((1ull << 62) + serial) == upgraded;
      CHECK(all, "every shared serial at the growth threshold sees the replacement");
+     CHECK(tex_get(b.serial) == upgraded, "other live serial sees the replacement");
 diff --git a/dm/gfx/tests/t_ups.c b/dm/gfx/tests/t_ups.c
 new file mode 100644
 index 0000000..07d5e82
@@ -1930,10 +1877,10 @@ index c796c51..444c9df 100644
          with self.assertRaisesRegex(SystemExit, 'SETTINGS_PLATFORM must be ios or mac'):
              build(WONDER, 'nvn', 'mca')
 diff --git a/docs/development.md b/docs/development.md
-index c145606..f65b9f8 100644
+index b936a2b..2684956 100644
 --- a/docs/development.md
 +++ b/docs/development.md
-@@ -477,6 +477,8 @@ It skips the iOS shaders, the Xcode project and the IPA. For Mario Kart 8 Deluxe
+@@ -486,6 +486,8 @@ It skips the iOS shaders, the Xcode project and the IPA. For Mario Kart 8 Deluxe
  cd "<NSP folder>/<id>_build/run" && DM_ROOT="<NSP folder>/<id>_build" DM_ROMFS="<NSP folder>/<id>_build/extract/<version>/RomFS.img" DM_SAVE="<NSP folder>/<id>_build/run/save" DM_TEMP="<NSP folder>/<id>_build/run/temp" DM_MSL_DIR="<NSP folder>/<id>_build/shader/cache" DM_FONT_DIR="<NSP folder>/<id>_build/font" DM_NVN_SHMAP="<repository>/dm/games/<id>/shader_map.tsv" DM_LANG=en-US DM_WINDOW=1 DM_AUDIO=1 "<NSP folder>/<id>_build/tools/dmhost" "<NSP folder>/<id>_build/patched_<version>"
  ```
  
@@ -1942,26 +1889,11 @@ index c145606..f65b9f8 100644
  The save is in `<id>_build/run/save` and stays there from run to run. `DM_AOC_DIR` is added when the folder has DLC. `DM_NVN_SHMAP` is added for an NVN game; it names the profile's shader map, or the derived or provisional profile's. A Vulkan or GL game's `DM_MSL_DIR` is `<id>_build/shader`. The switches of `--env-file` are added to the command.
  
  Reuse works as for the IPA. Each shader output has its own key, named after the one chain version: `shader/ios/b-<chain>.key` for the iOS libraries and `shader/mac-b-<chain>.key` for the Mac's (`shader/ios/vk.key` and `shader/vk.key` for a Vulkan game, the same with `gl` for a GL game). An NVN build writes only the requested target's key and compiles only its libraries, with one exception: an iOS build of a folder that holds the current chain's Mac libraries (a Mac-only build's, which its run command loads) builds them again too and writes both keys, since a full `dmsh_build.py` run removes every library of the folder before it rebuilds ([An iOS build after a Mac-only build kept no Mac libraries](reference/shaders.md#an-ios-build-after-a-mac-only-build-kept-no-mac-libraries)). The Mac sources and reflection are written and cached for either target, since paired vertex shaders, `c1_full.tsv` and `cb_extent.tsv` need them. A Mac-only build of a folder already packed as an IPA therefore translates again and compiles the Mac libraries. Either key is taken only while the Mac outputs carry a full build's stamp; `c1_full.tsv` or `cb_extent.tsv` that does not name it is made again from them, as for the IPA. Switching targets translates again because `dmsh_build.py`'s per-shader keys include the iOS compile convention; returning to a target reuses its previously compiled MSL from the Metal compile cache (`metallib/` in `shader/cache/cas.db`). Vulkan and GL builds still compile both targets for an IPA. After a successful shader build, the script removes the libraries of other chain versions (`b-<other>` in `shader/cache` and `shader/ios`, and their keys) and logs `removed old shader libraries b-… (N GB)`. A chain change used to leave about 2 GB per update for Breath of the Wild. It then removes the per-shader cache entries (`shader/cache/cas/shader`) the current chain's last full build did not list, and logs `removed old shader cache entries: N (X GB)`; Tears of the Kingdom kept 12 GB of them from six updates ([Old per-shader cache entries](reference/shaders.md#old-per-shader-cache-entries-grew-a-games-build-folder-with-each-chain-change)). The Metal compile cache is not touched.
-diff --git a/docs/env_switches.tsv b/docs/env_switches.tsv
-index 1d325f0..4be0377 100644
---- a/docs/env_switches.tsv
-+++ b/docs/env_switches.tsv
-@@ -414,7 +414,10 @@ DM_UDC_SELFTEST	diagnostic	`=1` runs a start-up check of DontCare load and store
- DM_UE_SHADERS	path	Folder of the Unreal shader code archives decoded by `uepak.py`, for `shader_split.py` (default `ue_shaders` beside the RomFS); needed when the RomFS has Unreal paks
- DM_UE_TEXTURE_POOL	switch	Megabytes Unreal's texture streaming pool (`r.Streaming.PoolSize`) is raised to, overriding the profile's `ue_texture_pool`; `0` keeps the game's own pool. On iOS only this switch turns it on (`Documents/env.txt`)
- DM_UI_HOLD	test	When set, keeps the controller mapping test window open for 60 seconds after its UI screenshot for manual inspection
-+DM_UPSCALE	player	`1`, `1.5` or `2`: NVN render targets at that multiple of the game's size on the Mac (sharper, more GPU time and memory); launcher setting (Render resolution)
- DM_UPSCALER	player	`metalfx` draws the game's own upscaler shaders (agl's NDSR network, found by the shader map) with MetalFX's spatial scaler; `game` (the default) runs them
-+DM_UPSCALE_GAME	player	`bypass` (the default) writes the output of the game's own spatial upscaler itself when its scene is rendered larger than that output (`DM_UPSCALE` 1.5 or 2): the scaled scene filtered down, sharper than the game's taps computed for its own size; `keep` runs the game's kernel; read at each such dispatch, so `DM_CTL`'s `env` command switches it while the game runs
-+DM_UPSCALE_GAME_FILTER	diagnostic	`box`, `tent` or `lanczos` (the default): the filter the host resolves the game's upscaled picture with (`DM_UPSCALE_GAME`), read at use for side-by-side shots
- DM_VK_CAPTURE	path	`=<dir>` (Mac) writes every SPIR-V module the game creates to `<dir>/<key>.spv`; the NSP script's Vulkan shader capture stage sets it
- DM_VK_LOG	diagnostic	`=1` logs Vulkan object creation in the Vulkan-on-Metal layer
- DM_VSYNC_HZ	switch	`=<Hz>`: rate at which a host thread fires the vi vsync event when the display link does not drive it (default 60)
 diff --git a/docs/reference/rendering.md b/docs/reference/rendering.md
-index 7131758..792fbf1 100644
+index 9bf4a75..bb7990f 100644
 --- a/docs/reference/rendering.md
 +++ b/docs/reference/rendering.md
-@@ -1246,6 +1246,22 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
+@@ -1341,6 +1341,22 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
  - **Check:** `make -C dm/gfx/tests GAME=0400380020056000 check_t_upscaler_mfx`: the classifier on synthetic code in each shape, and an sRGB input, full and as a packed subrectangle, comes out decoded, with linear input at the same sizes not decoded. The classifier against the translated shaders of all 44 variants of the two packs: no mismatch (Bananza 16 linear, 8 kept; Splatoon Raiders 10 sRGB, 10 kept). **Open:** Mario Kart World's 30 variants have not been read; whatever shape they are, an unknown one keeps its shader.
  - **Found on:** [Splatoon Raiders](../../dm/games/0400380020056000/README.md) ([#1156](https://github.com/seedds/nxnative/issues/1156)), the first level with `c1b8edc09e3313b1` and `30d8ee33de9dee85`: the washed-out picture reproduced, and with the fix the sky and scene means match the game's upscaler within 0.6 of 255 per channel, against about 50 too high before.
  
@@ -1985,7 +1917,7 @@ index 7131758..792fbf1 100644
  
  - **Symptom:** tall blue / textured panels that flickered frame to frame: the fountain's vertex shader pushed the water surface to the top of the screen.
 diff --git a/docs/settings.md b/docs/settings.md
-index 2f166f3..0d274e1 100644
+index 051bd25..d57c43c 100644
 --- a/docs/settings.md
 +++ b/docs/settings.md
 @@ -6,7 +6,7 @@ The screen before the game starts shows the settings the game supports. A settin

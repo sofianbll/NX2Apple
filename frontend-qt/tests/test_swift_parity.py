@@ -1237,14 +1237,14 @@ class LibraryAndSpaceTests(unittest.TestCase):
         self.assertEqual(saved_g['lastTarget'], 'iPhone / iPad')
         self.assertEqual(saved_g['toolsCommit'], 'b2d46b86d03f')
 
-        # 2. Verify REQUIRED_DYLIB_SYMBOLS against real C/ObjC sources in engine/ and win/ios/Launcher.m
+        # 2. Verify REQUIRED_DYLIB_SYMBOLS against real C/ObjC sources in engine/, frontend-ios/Shell/App/ and win/ios/Launcher.m
         eng = ROOT / 'engine'
         marker_file = eng / 'dm' / 'ios' / 'framework' / 'DmGameMarker.m'
         glue_file = eng / 'dm' / 'ios' / 'framework' / 'ShellGlue.m'
-        main_file = eng / 'dm' / 'ios' / 'Shell' / 'ShellMain.m'
+        main_file = ROOT / 'frontend-ios' / 'Shell' / 'App' / 'ShellMain.m'
         boot_hdr_file = eng / 'dm' / 'ios' / 'Sources' / 'FrameworkBootstrap.h'
         for required_src in (marker_file, glue_file, main_file, boot_hdr_file):
-            self.assertTrue(required_src.is_file(), f'missing synced engine source: {required_src}')
+            self.assertTrue(required_src.is_file(), f'missing source: {required_src}')
         marker_src = marker_file.read_text(encoding='utf-8')
         glue_src = glue_file.read_text(encoding='utf-8')
         main_src = main_file.read_text(encoding='utf-8')
@@ -1906,11 +1906,20 @@ class ParityWindowTests(unittest.TestCase):
             w._drive_folder = str(drive_ui)
             g1_item = next(g for g in m.library.games if g.title_id == tid1)
             g2_item = next(g for g in m.library.games if g.title_id == tid2)
+            def wait_drive_copy() -> None:
+                deadline = time.monotonic() + 5.0
+                while getattr(m, 'drive_copying', False) and time.monotonic() < deadline:
+                    self.app.processEvents()
+                    time.sleep(0.01)
+                self.app.processEvents()
+
             m.load_game_from_library(g1_item)
             w._copy_archive_to_drive()
+            wait_drive_copy()
             self.assertEqual((drive_ui / tid1 / 'romfs.img').read_bytes(), b'DMROMFS1_game1')
             m.load_game_from_library(g2_item)
             w._copy_archive_to_drive()
+            wait_drive_copy()
             self.assertEqual((drive_ui / tid2 / 'romfs.img').read_bytes(), b'DMROMFS1_game2')
             self.assertEqual((drive_ui / tid1 / 'romfs.img').read_bytes(), b'DMROMFS1_game1')
 
