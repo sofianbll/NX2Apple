@@ -28,6 +28,11 @@ PIN = 'ee6648cb2bb46c19255c1d04f88e9c40d36ef6b4'
 EID = PIN + '-d4abe1fa2485'
 
 
+def setUpModule():   # a fork's CI sets GITHUB_REPOSITORY, and the sources these tests expect are the default repo's
+    if (repo := os.environ.pop('GITHUB_REPOSITORY', None)) is not None:
+        unittest.addModuleCleanup(os.environ.__setitem__, 'GITHUB_REPOSITORY', repo)
+
+
 def new_key():
     k = ed25519.Ed25519PrivateKey.generate()
     raw = k.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())

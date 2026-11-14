@@ -357,6 +357,7 @@ import XCTest
         store.take(picked: [try file("test.keys")], kind: .keys)
         store.outDir = temporary.path
         store.modPaths = ["/mods/A", "/mods/B"]
+        defaults.set(temporary.appendingPathComponent("shell").path, forKey: "shellRoot")
         let nxb = temporary.path + "/nxbuild/nxb"
         try FileManager.default.createDirectory(atPath: (nxb as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         try Data([0]).write(to: URL(fileURLWithPath: nxb))
