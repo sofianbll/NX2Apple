@@ -31,18 +31,28 @@ What gets replaced, and why:
 `capture_jit` /           reuses `jit/jit.img` or packs existing `jit_capture/` dumps via
 `capture_nro`             `jit_capture.py`, and refuses missing runtime JIT or NRO captures
 `mac_app` / `mac_run`     Mac platforms: refused
+`proc_group.Group`        upstream's `selectors.DefaultSelector` on a pipe fd raises WinError 10038
+                          and `os.killpg` / `SIGSTOP` are POSIX-only, replaced by `_WinProcGroup`
 `build_ipa.sh`            replaced by `build_app.py` (through the shim, which also has to cover
                           the child processes the pipeline starts)
 ========================  ==========================================================
 """
 from __future__ import annotations
 
+import codecs
+import ctypes
 import importlib.util
+import io
+import locale
 import os
+import queue
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from pathlib import Path
 from types import ModuleType
@@ -176,6 +186,231 @@ def _install_fcntl_stub() -> None:
     sys.modules['fcntl'] = fcntl
 
 
+_k32 = ctypes.windll.kernel32 if sys.platform == 'win32' and hasattr(ctypes, 'windll') else None
+if _k32 is not None:
+    _k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    _k32.CreateJobObjectW.restype = ctypes.c_void_p
+    _k32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    _k32.AssignProcessToJobObject.restype = ctypes.c_int
+    _k32.QueryInformationJobObject.argtypes = [
+        ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32),
+    ]
+    _k32.QueryInformationJobObject.restype = ctypes.c_int
+    _k32.TerminateJobObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    _k32.TerminateJobObject.restype = ctypes.c_int
+    _k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    _k32.CloseHandle.restype = ctypes.c_int
+
+
+class _JobAccountingInfo(ctypes.Structure):
+    _fields_ = [
+        ('TotalUserTime', ctypes.c_int64),
+        ('TotalKernelTime', ctypes.c_int64),
+        ('ThisPeriodTotalUserTime', ctypes.c_int64),
+        ('ThisPeriodTotalKernelTime', ctypes.c_int64),
+        ('TotalPageFaultCount', ctypes.c_uint32),
+        ('TotalProcesses', ctypes.c_uint32),
+        ('ActiveProcesses', ctypes.c_uint32),
+        ('TotalTerminatedProcesses', ctypes.c_uint32),
+    ]
+
+
+class _WinProcGroup:
+    """Windows stand-in for `dm/tools/proc_group.Group` (`0b124486`).
+
+    Upstream's `proc_group.Group` registers a pipe fd with `selectors.DefaultSelector` (which raises
+    `WinError 10038` on Windows because Winsock `select` only accepts sockets) and stops process
+    groups with `os.killpg` / `SIGSTOP` / `SIGCONT`. Here a daemon reader thread streams the pipe
+    through a queue so `drain` timeouts still catch descendants holding stdout open, and a Win32 Job
+    Object tracks and terminates the whole child tree cleanly (falling back to process groups on
+    POSIX so unit tests exercise the exact class on macOS and Linux).
+    """
+
+    GRACE = 5.0
+    DRAIN = 5.0
+    REAP = 0.5
+    TICK = 0.02
+
+    def __init__(self, cmd, grace=None, drain=None, **popen):
+        self.grace = self.GRACE if grace is None else grace
+        self.drain = self.DRAIN if drain is None else drain
+        self.paused = False
+        self.stragglers: list[tuple[int | None, str]] = []
+        self.done = False
+        self._job: int | None = None
+        args = [str(c) for c in cmd]
+        if sys.platform == 'win32':
+            flags = (
+                popen.pop('creationflags', 0)
+                | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+                | getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            )
+            self.p = subprocess.Popen(args, creationflags=flags, **popen)
+            if _k32 is not None:
+                job = _k32.CreateJobObjectW(None, None)
+                if job:
+                    proc_handle = int(getattr(self.p, '_handle', 0) or 0)
+                    if proc_handle and _k32.AssignProcessToJobObject(job, proc_handle):
+                        self._job = job
+                    else:
+                        _k32.CloseHandle(job)
+        else:
+            self.p = subprocess.Popen(args, start_new_session=True, **popen)
+        self.pgid = self.p.pid
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, kind, exc, tb):
+        try:
+            if kind is not None:
+                self.stop()
+            elif not self.done:
+                self.finish()
+        finally:
+            if self.p.stdout:
+                try:
+                    self.p.stdout.close()
+                except OSError:
+                    pass
+            self._close_job()
+        return False
+
+    def _close_job(self) -> None:
+        if self._job is not None and _k32 is not None:
+            _k32.CloseHandle(self._job)
+            self._job = None
+
+    def pause(self) -> None:
+        self.paused = True
+
+    def resume(self) -> None:
+        self.paused = False
+
+    def _has_live_members(self) -> bool:
+        self.p.poll()
+        if self._job is not None and _k32 is not None:
+            info = _JobAccountingInfo()
+            if _k32.QueryInformationJobObject(self._job, 1, ctypes.byref(info), ctypes.sizeof(info), None):
+                return info.ActiveProcesses > 0
+        if sys.platform != 'win32':
+            try:
+                os.killpg(self.pgid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return self.p.returncode is None
+        return self.p.returncode is None
+
+    def _gone(self, secs: float) -> bool:
+        end = time.monotonic() + secs
+        while True:
+            if not self._has_live_members():
+                return True
+            if time.monotonic() >= end:
+                return False
+            time.sleep(self.TICK)
+
+    def stop(self, sig=None) -> None:
+        self.done = True
+        self.resume()
+        if self._job is not None and _k32 is not None:
+            _k32.TerminateJobObject(self._job, 1)
+        elif sys.platform == 'win32':
+            try:
+                subprocess.run(
+                    ['taskkill', '/T', '/F', '/PID', str(self.pgid)],
+                    capture_output=True, timeout=10, **tc.no_window(),
+                )
+            except (OSError, subprocess.SubprocessError):
+                pass
+        else:
+            try:
+                os.killpg(self.pgid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        if self.p.poll() is None:
+            try:
+                self.p.kill()
+            except OSError:
+                pass
+        self.p.wait()
+        self._gone(self.REAP)
+
+    def finish(self) -> int:
+        self.p.wait()
+        self.done = True
+        if not self._gone(self.drain):
+            if not self.stragglers:
+                self.stragglers.append((None, 'a background process'))
+            self.stop()
+        return self.p.returncode
+
+    def lines(self):
+        out = self.p.stdout
+        assert out is not None, 'lines() reads a group started with stdout=PIPE'
+        q: queue.Queue[bytes | None] = queue.Queue()
+        read_chunk = getattr(out, 'read1', None)
+
+        def _reader() -> None:
+            try:
+                while True:
+                    data = read_chunk(65536) if read_chunk is not None else os.read(out.fileno(), 65536)
+                    if not data:
+                        break
+                    q.put(data)
+            except (OSError, ValueError):
+                pass
+            finally:
+                q.put(None)
+
+        threading.Thread(target=_reader, daemon=True).start()
+        dec = io.IncrementalNewlineDecoder(
+            codecs.getincrementaldecoder(locale.getpreferredencoding(False))(errors='replace'),
+            translate=True,
+        )
+        buf = ''
+        end: float | None = None
+        eof = False
+        while not eof:
+            wait = 0.05 if end is None else max(0.0, min(0.05, end - time.monotonic()))
+            try:
+                item = q.get(timeout=wait)
+                if item is None:
+                    eof = True
+                    break
+                buf += dec.decode(item)
+                *done_lines, buf = buf.split('\n')
+                for line in done_lines:
+                    yield line + '\n'
+                continue
+            except queue.Empty:
+                pass
+            if end is None and self.p.poll() is not None:
+                end = time.monotonic() + self.drain
+            if end is not None and time.monotonic() >= end:
+                while True:
+                    try:
+                        item = q.get_nowait()
+                    except queue.Empty:
+                        break
+                    if item is None:
+                        eof = True
+                        break
+                    buf += dec.decode(item)
+                    *done_lines, buf = buf.split('\n')
+                    for line in done_lines:
+                        yield line + '\n'
+                if not eof:
+                    self.stragglers.append((None, 'a background process holding its output'))
+                    self.stop()
+                break
+        buf += dec.decode(b'', final=True)
+        if buf:
+            yield buf
+
+
 def _option_value(argv: list[str], name: str) -> str | None:
     for i, a in enumerate(argv):
         if a == name and i + 1 < len(argv):
@@ -208,6 +443,10 @@ def patch(mod: ModuleType, repo: Path, *, j: int | None = None) -> None:
     global _UPSTREAM_RUN
     if _UPSTREAM_RUN is None:
         _UPSTREAM_RUN = mod.run
+
+    os.environ.setdefault('DMSH_PROCS', '0')
+    if hasattr(mod, 'proc_group'):
+        mod.proc_group.Group = _WinProcGroup
 
     # ---------------------------------------------------------------- prereqs
     def check_prereqs(env, xlate, mac=False, *a, **kw):
@@ -256,32 +495,46 @@ def patch(mod: ModuleType, repo: Path, *, j: int | None = None) -> None:
 
     def build_nx_extract(repo_: Path, work: Path, logs: Path, env, *a, **kw):
         """Use the executable shipped with this engine, or build it for a source checkout."""
-        bundled = repo_ / 'dm/tools/nx_extract_bin/nx_extract.exe'
+        repo_p = Path(repo_)
+        proj = repo_p / 'dm/tools/nx_extract'
+        has_src = (proj / 'Program.cs').is_file() and (proj / 'nx_extract.csproj').is_file()
+        want = _nx_extract_source_sha(repo_p) if has_src else ''
+        bundled = repo_p / 'dm/tools/nx_extract_bin/nx_extract.exe'
         if bundled.is_file():
+            _verify_nx_extract(bundled, want, env)
             return bundled
 
         import tempfile
-        nx = work / 'tools/nx_extract/nx_extract'
+        nx = Path(work) / 'tools/nx_extract/nx_extract'
+        nx_exe = nx.parent / 'nx_extract.exe'
+        if nx_exe.is_file():
+            try:
+                _verify_nx_extract(nx_exe, want, env)
+                return nx
+            except BuildError:
+                mod.rmtree(nx.parent)
+
         # An absolute path: `dotnet` by name relies on PATH, and a toolchain this app downloaded
         # lives in its own folder (the shim's PATH has it, but not every caller goes through it).
         dn = tc.dotnet_dir()
         dotnet = str(dn / 'dotnet.exe') if dn else 'dotnet'
         with tempfile.TemporaryDirectory(prefix='nx_extract_') as td, \
                 tempfile.TemporaryDirectory(prefix='nx_extract_art_') as art:
-            mod.run([dotnet, 'build', repo_ / 'dm/tools/nx_extract', '-c', 'Release',
+            mod.run([dotnet, 'build', proj, '-c', 'Release',
                      '-p:PublishAot=false', '--artifacts-path', art,
                      '-o', td, '-v', 'quiet', '-nologo'],
-                    logs / 'nx_extract_build.log', env=env)
+                    Path(logs) / 'nx_extract_build.log', env=env)
             exe = Path(td) / 'nx_extract.exe'
             if not exe.exists():
                 raise BuildError(f'nx_extract built without nx_extract.exe (see '
-                                 f'{logs / "nx_extract_build.log"})')
+                                 f'{Path(logs) / "nx_extract_build.log"})')
             mod.rmtree(nx.parent)
             try:
                 shutil.copytree(td, nx.parent)
             except BaseException:
                 mod.rmtree(nx.parent)
                 raise
+        _verify_nx_extract(nx_exe, want, env)
         return nx
 
     def find_nx_extract(repo_: Path, env=None, *a, **kw):
@@ -978,21 +1231,29 @@ def main(argv: list[str] | None = None) -> int:
 
     from . import shim
     env = shim.build_env(python_exe=sys.executable)
-    os.environ.clear()
-    os.environ.update(env)
-    sdir = str(shim.shim_dir())
-    if sdir not in sys.path:
-        sys.path.insert(0, sdir)
-    if 'sitecustomize' not in sys.modules:
-        try:
-            import sitecustomize  # noqa: F401
-        except Exception:
-            pass
+    owned_spool: str | None = None
+    if not env.get('NSPB_SPOOL_DIR', '').strip():
+        owned_spool = tempfile.mkdtemp(prefix='nspb-spool-')
+        env['NSPB_SPOOL_DIR'] = owned_spool
+    try:
+        os.environ.clear()
+        os.environ.update(env)
+        sdir = str(shim.shim_dir())
+        if sdir not in sys.path:
+            sys.path.insert(0, sdir)
+        if 'sitecustomize' not in sys.modules:
+            try:
+                import sitecustomize  # noqa: F401
+            except Exception:
+                pass
 
-    mod = load_upstream(repo)
-    patch(mod, repo)
-    sys.argv[0] = str(repo / 'scripts' / 'build_ipa_from_nsp.py')
-    return mod.cli(argv)
+        mod = load_upstream(repo)
+        patch(mod, repo)
+        sys.argv[0] = str(repo / 'scripts' / 'build_ipa_from_nsp.py')
+        return mod.cli(argv)
+    finally:
+        if owned_spool:
+            shutil.rmtree(owned_spool, ignore_errors=True)
 
 
 if __name__ == '__main__':

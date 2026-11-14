@@ -17,11 +17,15 @@ package struct QueueEntry: Codable, Identifiable, Equatable, Sendable {
     /// A game folder (GameLibrary.folderInput) the inputs came from, else nil.
     package var gameFolder: String?
     package var outputDirectory: String
+    /// Code-mod folders captured for this game. Nil only in queue files written before this snapshot existed.
+    package var modPaths: [String]?
     /// The engine the entry was added under (`EngineSyncStore` selection). A queue never builds with another one.
     package var engineID: String
     /// Entries added together share a batch. A shared-app batch packages its successful games once when it ends (#997).
     package var batch: UUID
     package var packageAfter: Bool
+    /// Whether an iPhone/iPad batch exports an unsigned IPA (true) or installs directly on a device (false), nil before start or on Mac.
+    package var exportIPA: Bool?
     package var status: Status
     /// Why the entry failed or was skipped, shown in the summary.
     package var reason: String?
@@ -29,11 +33,14 @@ package struct QueueEntry: Codable, Identifiable, Equatable, Sendable {
     package var destinationName: String?
 
     package init(id: UUID = UUID(), gameID: UUID? = nil, titleID: String, name: String, target: String, inputs: [String: [String]],
-                 gameFolder: String? = nil, outputDirectory: String, engineID: String, batch: UUID = UUID(), packageAfter: Bool = false,
-                 status: Status = .queued, reason: String? = nil, destinationName: String? = nil) {
+                 gameFolder: String? = nil, outputDirectory: String, modPaths: [String] = [], engineID: String, batch: UUID = UUID(),
+                 packageAfter: Bool = false, exportIPA: Bool? = nil, status: Status = .queued, reason: String? = nil,
+                 destinationName: String? = nil) {
         self.id = id; self.gameID = gameID; self.titleID = titleID; self.name = name; self.target = target; self.inputs = inputs
-        self.gameFolder = gameFolder; self.outputDirectory = outputDirectory; self.engineID = engineID; self.batch = batch
-        self.packageAfter = packageAfter; self.status = status; self.reason = reason; self.destinationName = destinationName
+        self.gameFolder = gameFolder; self.outputDirectory = outputDirectory; self.modPaths = modPaths; self.engineID = engineID
+        self.batch = batch
+        self.packageAfter = packageAfter; self.exportIPA = exportIPA; self.status = status; self.reason = reason
+        self.destinationName = destinationName
     }
 
     package var finished: Bool { status == .done || status == .failed || status == .skipped }

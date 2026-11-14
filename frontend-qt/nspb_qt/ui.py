@@ -39,11 +39,19 @@ from .app_update import APP_VERSION
 from .build_notes import TEXT, TITLE, stale_reason
 from .i18n import Lang
 from .model import Dep, DepState, Model
-from .sheets import CheatsDialog, DefenderPromptDialog, DeleteGameDialog, FreeSpaceDialog, OnboardingDialog
+from .sheets import (
+    CheatsDialog,
+    DefenderPromptDialog,
+    DeleteGameDialog,
+    DriveSelectDialog,
+    FreeSpaceDialog,
+    OnboardingDialog,
+)
 from .widgets import (
     CardGroup,
     CardPageHeading,
     DropOverlayWidget,
+    ElidedLabel,
     GameCardWidget,
     HeroBannerWidget,
     HorizontalStripViewport,
@@ -159,6 +167,7 @@ class MainWindow(QMainWindow):
         self._library_filter = 'owned'  # 'owned' or 'built'
         self._search_query = ''
         self._drive_folder = ''
+        self._drive_status: tuple[str, str, str] | None = None
         self._options_expanded = True
         self._deps_expanded = True
         self._deps_sig: tuple | None = None
@@ -221,6 +230,12 @@ class MainWindow(QMainWindow):
         self.m.appUpdateFound.connect(self._on_app_update)
         self.m.appRelaunching.connect(QApplication.quit)
         self.m.libraryChanged.connect(self._refresh_library)
+        if hasattr(self.m, 'driveCopyStateChanged'):
+            self.m.driveCopyStateChanged.connect(self._refresh_install_card)
+        if hasattr(self.m, 'driveCopyProgress'):
+            self.m.driveCopyProgress.connect(self._on_drive_copy_progress)
+        if hasattr(self.m, 'driveCopyFinished'):
+            self.m.driveCopyFinished.connect(self._on_drive_copy_finished)
 
         if self.m.log_path:
             self._append_log(self.m.t('log.at', str(self.m.log_path)) + '\n\n')
@@ -529,7 +544,79 @@ class MainWindow(QMainWindow):
         self.lib_stack.addWidget(pop)
 
         lay.addWidget(self.lib_stack, 1)
+
+        self.skipped_wrap = QWidget()
+        sw_lay = QVBoxLayout(self.skipped_wrap)
+        sw_lay.setContentsMargins(36, 0, 36, 14)
+        sw_lay.setSpacing(0)
+        self.skipped_banner = QFrame()
+        self.skipped_banner.setObjectName('skippedBanner')
+        self.skipped_banner.setStyleSheet(
+            'QFrame#skippedBanner {'
+            ' background: rgba(255, 189, 56, 0.08);'
+            ' border: 1px solid rgba(255, 189, 56, 0.25);'
+            ' border-radius: 12px;'
+            '}'
+        )
+        sb_lay = QHBoxLayout(self.skipped_banner)
+        sb_lay.setContentsMargins(14, 9, 14, 9)
+        sb_lay.setSpacing(10)
+        self.skipped_dot = _dot(style.AMBER)
+        sb_lay.addWidget(self.skipped_dot)
+        self.skipped_lbl = QLabel('')
+        self.skipped_lbl.setWordWrap(True)
+        self.skipped_lbl.setStyleSheet(f'color: {style.TEXT}; font-size: 12.5px;')
+        sb_lay.addWidget(self.skipped_lbl, 1)
+        self.skipped_btn = QPushButton(self.m.t('library.skippedDetails'))
+        self.skipped_btn.setCursor(Qt.PointingHandCursor)
+        self.skipped_btn.clicked.connect(self._show_skipped_files_dialog)
+        sb_lay.addWidget(self.skipped_btn)
+        self.skipped_dismiss_btn = QPushButton('✕')
+        self.skipped_dismiss_btn.setObjectName('skippedDismissBtn')
+        self.skipped_dismiss_btn.setFixedSize(26, 26)
+        self.skipped_dismiss_btn.setCursor(Qt.PointingHandCursor)
+        self.skipped_dismiss_btn.setToolTip(self.m.t('library.dismissSkipped'))
+        self.skipped_dismiss_btn.setAccessibleName(self.m.t('library.dismissSkipped'))
+        self.skipped_dismiss_btn.setStyleSheet(
+            'QPushButton#skippedDismissBtn {'
+            f' background: rgba(255, 255, 255, 0.06); color: {style.MUTED};'
+            f' border: 1px solid {style.BORDER}; border-radius: 13px;'
+            ' font-size: 11px; font-weight: 600; padding: 0;'
+            '}'
+            'QPushButton#skippedDismissBtn:hover {'
+            f' background: rgba(255, 255, 255, 0.12); color: {style.TEXT};'
+            '}'
+        )
+        self.skipped_dismiss_btn.clicked.connect(self._dismiss_skipped_banner)
+        sb_lay.addWidget(self.skipped_dismiss_btn)
+        sw_lay.addWidget(self.skipped_banner)
+        self.skipped_wrap.hide()
+        lay.addWidget(self.skipped_wrap)
         return page
+
+    def _dismiss_skipped_banner(self) -> None:
+        dismiss_fn = getattr(self.m.library, 'dismiss_skipped_banner', None)
+        if callable(dismiss_fn):
+            dismiss_fn()
+        self._refresh_library()
+
+    def _show_skipped_files_dialog(self) -> None:
+        skipped = list(getattr(self.m.library, 'skipped_files', []))
+        if not skipped:
+            return
+        lines: list[str] = []
+        for item in skipped:
+            if item.kind == 'orphan':
+                lines.append('• ' + self.m.t('library.skippedOrphan', item.name))
+            else:
+                lines.append('• ' + self.m.t('library.skippedArchive', item.name))
+        box = QMessageBox(
+            QMessageBox.Icon.Information,
+            self.m.t('library.skippedTitle'),
+            '\n'.join(lines),
+            parent=self,
+        )
+        box.exec()
 
     def _filtered_games(self) -> list[lib.LibraryGame]:
         games = list(self.m.library.games)
@@ -552,6 +639,21 @@ class MainWindow(QMainWindow):
             selected=self._library_filter,
         )
         self.rescan_lib_btn.setText(self.m.t('library.rescan'))
+
+        skipped = list(getattr(self.m.library, 'skipped_files', []))
+        show_skipped = (
+            self.m.library.shows_skipped_banner
+            if hasattr(self.m.library, 'shows_skipped_banner')
+            else bool(skipped)
+        )
+        if skipped and show_skipped:
+            self.skipped_lbl.setText(self.m.t('library.skippedBanner', len(skipped)))
+            self.skipped_btn.setText(self.m.t('library.skippedDetails'))
+            self.skipped_dismiss_btn.setToolTip(self.m.t('library.dismissSkipped'))
+            self.skipped_dismiss_btn.setAccessibleName(self.m.t('library.dismissSkipped'))
+            self.skipped_wrap.show()
+        else:
+            self.skipped_wrap.hide()
 
         if not self.m.library.games:
             self.lib_stack.setCurrentIndex(0)
@@ -769,6 +871,9 @@ class MainWindow(QMainWindow):
         if not self.m.library.games_folder:
             self._pick_library_folder()
             return
+        reset_fn = getattr(self.m.library, 'reset_skipped_banner_dismissal', None)
+        if callable(reset_fn):
+            reset_fn()
         self.m.library.rescan_games_folder(repo_path=self.m.engine_path, default_keys=self.m.keys_path)
         for g in self.m.library.games:
             self.m.artwork.request_banner_async(g.title_id)
@@ -1096,6 +1201,12 @@ class MainWindow(QMainWindow):
         s1_col.addWidget(self.step1_sub)
         rs1_lay.addLayout(s1_col, 1)
 
+        self.step1_repack_btn = QPushButton(self.m.t('shell.exportBuilt'))
+        self.step1_repack_btn.setToolTip(self.m.t('shell.exportBuiltNote'))
+        self.step1_repack_btn.clicked.connect(self._repack_built_shell_ipa)
+        self.step1_repack_btn.hide()
+        rs1_lay.addWidget(self.step1_repack_btn)
+
         self.step1_reveal_btn = QPushButton(self.m.t('shell.showInFinder'))
         self.step1_reveal_btn.clicked.connect(lambda: pu.reveal(self._effective_ipa_path()))
         self.step1_reveal_btn.hide()
@@ -1139,9 +1250,15 @@ class MainWindow(QMainWindow):
         self.step3_sub = QLabel(self.m.t('shell.copyExternalNote'))
         self.step3_sub.setObjectName('muted')
         self.step3_sub.setWordWrap(True)
+        self.drive_progress_bar = QProgressBar()
+        self.drive_progress_bar.setRange(0, 100)
+        self.drive_progress_bar.setValue(0)
+        self.drive_progress_bar.setTextVisible(False)
+        self.drive_progress_bar.hide()
         s3_col.addWidget(self.step3_title)
         s3_col.addWidget(self.drive_path_lbl)
         s3_col.addWidget(self.step3_sub)
+        s3_col.addWidget(self.drive_progress_bar)
         rs3_lay.addLayout(s3_col, 1)
 
         self.step3_open_romfs_btn = QPushButton(self.m.t('shell.showInFinder'))
@@ -1157,6 +1274,12 @@ class MainWindow(QMainWindow):
         self.drive_copy_btn.setObjectName('creamPill')
         self.drive_copy_btn.clicked.connect(self._copy_archive_to_drive)
         rs3_lay.addWidget(self.drive_copy_btn)
+
+        self.drive_select_btn = QPushButton(self.m.t('shell.selectGamesButton'))
+        self.drive_select_btn.setToolTip(self.m.t('shell.selectGamesDriveNote'))
+        self.drive_select_btn.clicked.connect(self._select_games_for_drive)
+        self.drive_select_btn.hide()
+        rs3_lay.addWidget(self.drive_select_btn)
         s3_outer.addWidget(r_s3)
         grp.add_row(self.step3_container)
 
@@ -1166,8 +1289,15 @@ class MainWindow(QMainWindow):
         """The shared app's only output, whatever mode ran last."""
         return lib.shell_ipa_path(self.m.shell_cache_path)
 
+    def _effective_out_dir(self) -> str:
+        if self.m.out_dir:
+            return self.m.out_dir
+        if self.m.game_folder is not None:
+            return self.m.game_folder.folder
+        return str(Path(self.m.base_path).parent) if self.m.base_path else ''
+
     def _one_game_ipa_path(self) -> str:
-        return lib.one_game_ipa_path(self.m.out_dir, self.m.build_key)
+        return lib.one_game_ipa_path(self._effective_out_dir(), self.m.build_key)
 
     def _effective_ipa_path(self) -> str:
         # The two kinds write different files, so the reveal button answers for the kind that is
@@ -1176,7 +1306,7 @@ class MainWindow(QMainWindow):
         return lib.reveal_ipa_path(
             ipa_kind=self.m.ipa_kind,
             shell_cache=self.m.shell_cache_path,
-            out_dir=self.m.out_dir,
+            out_dir=self._effective_out_dir(),
             build_key=self.m.build_key,
             last_ipa=self.m.ipa_path,
             library_ipa=sel.ipa_path if (sel and sel.has_ipa) else '',
@@ -1211,6 +1341,20 @@ class MainWindow(QMainWindow):
         self.step1_sub.setText(self.m.t('shell.oneGameSub' if one else 'shell.step1Sub'))
         ipa_p = self._effective_ipa_path()
         has_ipa = bool(ipa_p and os.path.exists(ipa_p))
+        has_built_shell = (
+            not one
+            and hasattr(self.m, 'built_shell_games')
+            and bool(self.m.built_shell_games())
+        )
+        can_repack = (
+            not one
+            and hasattr(self.m, 'can_export_built_games')
+            and bool(self.m.can_export_built_games())
+        )
+        self.step1_repack_btn.setText(self.m.t('shell.exportBuilt'))
+        self.step1_repack_btn.setToolTip(self.m.t('shell.exportBuiltNote'))
+        self.step1_repack_btn.setVisible(has_built_shell)
+        self.step1_repack_btn.setEnabled(can_repack)
         self.step1_reveal_btn.setText(self.m.t('shell.showInFinder'))
         self.step1_reveal_btn.setToolTip(self.m.t('msg.ipaAt', ipa_p) if has_ipa else '')
         self.step1_reveal_btn.setVisible(has_ipa)
@@ -1220,22 +1364,102 @@ class MainWindow(QMainWindow):
         self.drive_path_lbl.setText(self._drive_folder or self.m.t('shell.driveNone'))
         self.step3_open_romfs_btn.setText(self.m.t('shell.showInFinder'))
         self.drive_choose_btn.setText(self.m.t('shell.driveChoose'))
-        self.drive_copy_btn.setText(self.m.t('shell.driveCopy'))
+        self.drive_select_btn.setText(self.m.t('shell.selectGamesButton'))
+        self.drive_select_btn.setToolTip(self.m.t('shell.selectGamesDriveNote'))
         self.step3_container.setVisible(not one)
         arch_p = self._effective_archive_path()
         has_arch = bool(arch_p and os.path.isdir(arch_p))
+        sources = (
+            self.m.shared_app_data_sources()
+            if hasattr(self.m, 'shared_app_data_sources')
+            else []
+        )
         self.step3_open_romfs_btn.setToolTip(self.m.t('msg.archiveAt', arch_p) if has_arch else '')
         self.step3_open_romfs_btn.setVisible(has_arch)
-        self.drive_copy_btn.setEnabled(has_arch)
+
+        copying = bool(getattr(self.m, 'drive_copying', False))
+        cancelling = bool(getattr(self.m, 'drive_copy_cancelling', False))
+        self.drive_choose_btn.setEnabled(not copying)
+        self.drive_select_btn.setVisible(not copying and bool(sources))
+        self.drive_select_btn.setEnabled(not copying and not self.m.running and bool(sources))
+        if copying:
+            self.drive_copy_btn.setText(
+                self.m.t('transfer.cancelling' if cancelling else 'transfer.cancel')
+            )
+            btn_obj = 'danger'
+            self.drive_copy_btn.setEnabled(not cancelling)
+            self._update_drive_progress_widgets(
+                int(getattr(self.m, 'drive_copy_done', 0) or 0),
+                int(getattr(self.m, 'drive_copy_total', 0) or 0),
+            )
+        else:
+            self.drive_copy_btn.setText(self.m.t('shell.driveCopy'))
+            btn_obj = 'creamPill'
+            self.drive_copy_btn.setEnabled(has_arch)
+            self.drive_progress_bar.hide()
+            curr_tid = (getattr(self.m, 'packed_title_id', '') or '').upper()
+            if self._drive_status is not None and (
+                self._drive_status[0] == curr_tid or self._drive_status[0] == '*'
+            ):
+                _tid, kind, info = self._drive_status
+                if kind == 'done':
+                    self.step3_sub.setText(
+                        self.m.t('shell.driveDone', info, self.m.t('ios.ui.gameData'))
+                    )
+                elif kind == 'cancelled':
+                    self.step3_sub.setText(self.m.t('msg.stopped'))
+                else:
+                    self.step3_sub.setText(self.m.t('shell.driveFailed', info))
+            else:
+                self.step3_sub.setText(self.m.t('shell.copyExternalNote'))
+        if self.drive_copy_btn.objectName() != btn_obj:
+            self.drive_copy_btn.setObjectName(btn_obj)
+            self.drive_copy_btn.style().unpolish(self.drive_copy_btn)
+            self.drive_copy_btn.style().polish(self.drive_copy_btn)
+
+    def _update_drive_progress_widgets(self, done: int, total: int) -> None:
+        pct = int(min(100, (done * 100) // total)) if total > 0 else 0
+        game = getattr(self.m, 'drive_copy_game', '') or getattr(self.m, 'packed_title_id', '')
+        label = f'{game} ({pct}%)' if game else f'{pct}%'
+        self.step3_sub.setText(
+            self.m.t('shell.driveProgress', label, lib.format_bytes(done), lib.format_bytes(total))
+        )
+        self.drive_progress_bar.setValue(pct)
+        self.drive_progress_bar.show()
+
+    def _on_drive_copy_progress(self, done: int, total: int) -> None:
+        if not getattr(self.m, 'drive_copying', False):
+            return
+        self._update_drive_progress_widgets(int(done), int(total))
+
+    def _on_drive_copy_finished(self, ok: bool, cancelled: bool, info: str) -> None:
+        fin_tid = (
+            getattr(self.m, 'drive_copy_tid', '')
+            or getattr(self.m, 'packed_title_id', '')
+            or ''
+        ).upper()
+        if ok:
+            self._drive_status = (fin_tid, 'done', info)
+        elif cancelled:
+            self._drive_status = (fin_tid, 'cancelled', '')
+        else:
+            self._drive_status = (fin_tid, 'failed', info)
+        self._refresh_install_card()
 
     def _pick_drive_folder(self) -> None:
+        if getattr(self.m, 'drive_copying', False):
+            return
         d = QFileDialog.getExistingDirectory(self, self.m.t('shell.driveChoose'), self._drive_folder or str(Path.home()))
         if d:
             self._drive_folder = d
+            self._drive_status = None
             self.drive_path_lbl.setText(d)
             self._refresh_install_card()
 
     def _copy_archive_to_drive(self) -> None:
+        if getattr(self.m, 'drive_copying', False):
+            self.m.cancel_drive_copy()
+            return
         arch_p = self._effective_archive_path()
         if not arch_p or not os.path.isdir(arch_p):
             return
@@ -1245,11 +1469,60 @@ class MainWindow(QMainWindow):
                 return
             self._drive_folder = d
             self.drive_path_lbl.setText(d)
-        ok, info = self.m.copy_archive_to_drive(self._drive_folder)
-        if ok:
-            self.step3_sub.setText(self.m.t('shell.driveDone', info, self.m.t('ios.ui.gameData')))
+        self._drive_status = None
+        if hasattr(self.m, 'start_drive_copy'):
+            self.m.start_drive_copy(self._drive_folder, archive_dir=arch_p)
         else:
-            self.step3_sub.setText(self.m.t('shell.driveFailed', info))
+            ok, info = self.m.copy_archive_to_drive(self._drive_folder)
+            self._on_drive_copy_finished(ok, False, info)
+
+    def _repack_built_shell_ipa(self) -> None:
+        if not hasattr(self.m, 'can_export_built_games') or not self.m.can_export_built_games():
+            return
+        stale = (
+            self.m.stale_shell_frameworks()
+            if hasattr(self.m, 'stale_shell_frameworks')
+            else []
+        )
+        if stale:
+            names = ', '.join(g.name or g.title_id for g in stale)
+            box = QMessageBox(self)
+            box.setWindowTitle(self.m.t('stale.title'))
+            box.setText(self.m.t('stale.message', names))
+            go_btn = box.addButton(self.m.t('stale.go'), QMessageBox.AcceptRole)
+            box.addButton(self.m.t('stale.stop'), QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is not go_btn:
+                return
+        self._failed = False
+        self.footer.setText('')
+        self.m.start_repack_shell_ipa()
+        self._refresh_install_card()
+
+    def _select_games_for_drive(self) -> None:
+        if getattr(self.m, 'drive_copying', False) or self.m.running:
+            return
+        sources = (
+            self.m.shared_app_data_sources()
+            if hasattr(self.m, 'shared_app_data_sources')
+            else []
+        )
+        if not sources:
+            return
+        if not self._drive_folder:
+            d = QFileDialog.getExistingDirectory(self, self.m.t('shell.driveChoose'), str(Path.home()))
+            if not d:
+                return
+            self._drive_folder = d
+            self.drive_path_lbl.setText(d)
+        dlg = DriveSelectDialog(self.m, self._drive_folder, sources, parent=self)
+        if dlg.exec() != DriveSelectDialog.Accepted:
+            return
+        chosen = dlg.chosen_items()
+        if not chosen:
+            return
+        self._drive_status = None
+        self.m.start_batch_drive_copy(self._drive_folder, chosen)
 
     def _build_action_card(self) -> CardGroup:
         grp = CardGroup()
@@ -1895,9 +2168,10 @@ class MainWindow(QMainWindow):
 
         self.act_title = QLabel(self.m.t('library.localNote'))
         self.act_title.setStyleSheet('font-size: 12px; font-weight: 600;')
+        self.act_title.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         row.addWidget(self.act_title)
 
-        self.act_detail = QLabel('')
+        self.act_detail = ElidedLabel('', elide_mode=Qt.ElideMiddle)
         self.act_detail.setObjectName('muted')
         row.addWidget(self.act_detail, 1)
 
@@ -1939,7 +2213,12 @@ class MainWindow(QMainWindow):
             self.act_stop_btn.setText(self.m.t('btn.stop'))
             self.act_stop_btn.show()
         else:
-            self.act_dot.set_color(style.GREEN if self.m.can_build else style.NEUTRAL_DOT)
+            has_block = bool(
+                self.m.repo_ok and self.m.deps_checked and self.m.all_deps_ok and self.m.prebuild_block_reason()
+            )
+            self.act_dot.set_color(
+                style.GREEN if self.m.can_build else (style.AMBER if has_block else style.NEUTRAL_DOT)
+            )
             self.act_title.setText(self.m.t('library.localNote'))
             self.act_detail.setText(self.footer.text())
             self.act_progress.hide()
@@ -2413,8 +2692,10 @@ class MainWindow(QMainWindow):
     def _refresh_stages(self) -> None:
         while self.stages_col.count():
             item = self.stages_col.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w_old = item.widget()
+            if w_old:
+                w_old.hide()
+                w_old.deleteLater()
         self._refresh_progress_visibility()
         for st in self.m.stages:
             r = QHBoxLayout()
@@ -2426,14 +2707,19 @@ class MainWindow(QMainWindow):
             }.get(st.state, style.NEUTRAL_DOT)
             r.addWidget(_dot(color))
             name = QLabel(st.name)
+            name.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
             if st.state == 'running':
                 name.setStyleSheet('font-weight: 700;')
             elif st.state != 'done':
                 name.setObjectName('muted')
             r.addWidget(name)
-            detail = QLabel(st.detail if st.state == 'running' else '')
+            detail = ElidedLabel(
+                st.detail if st.state == 'running' else '',
+                elide_mode=Qt.ElideMiddle,
+                alignment=Qt.AlignRight | Qt.AlignVCenter,
+            )
             detail.setObjectName('mono')
-            r.addWidget(detail, 1, Qt.AlignRight)
+            r.addWidget(detail, 1)
             w = QWidget()
             w.setLayout(r)
             self.stages_col.addWidget(w)
@@ -2471,6 +2757,7 @@ class MainWindow(QMainWindow):
             self.build_btn.setObjectName('primary')
             self.build_btn.setEnabled(self.m.can_build)
             if not self.m.can_build and not self._failed:
+                is_prebuild_block = False
                 if not self.m.repo_ok:
                     why = t('status.chooseRepo')
                 elif not self.m.deps_checked:
@@ -2480,10 +2767,15 @@ class MainWindow(QMainWindow):
                 elif self.m.game_folder_problem:
                     # the real reason the folder was refused, not a generic line and never "the base game and keys are missing" (#696)
                     why = self.m.game_folder_problem
+                elif (block_why := self.m.prebuild_block_reason()):
+                    why = block_why
+                    is_prebuild_block = True
                 else:
                     why = t('status.needInputs')
+                self.footer.setStyleSheet(f'color: {style.AMBER}; font-size: 12.5px;' if is_prebuild_block else '')
                 self.footer.setText(why)
             elif self.m.can_build and not self.m.ipa_path and not self.m.mac_app_path and self.m.failure is None and not self._failed:
+                self.footer.setStyleSheet('')
                 self.footer.setText('')
 
         if not self.m.running:

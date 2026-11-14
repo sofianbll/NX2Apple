@@ -117,7 +117,7 @@ import NXModel
     /// A checkout with a stand-in build_shell.sh: it records its environment and writes the project with its entitlements file.
     private func makeRepo(entitlements: Bool = true) throws -> String {
         let repo = path("repo")
-        try write(repo + "/dm/ios/tools/build_shell.sh", """
+        try write(repo + "/frontend-ios/Shell/build_shell.sh", """
         #!/bin/bash
         [ "$1" = "--prepare-xcode" ] || { echo "FAIL: no --prepare-xcode"; exit 1; }
         mkdir -p "$SHELL_DIR/DmShell.xcodeproj" "$SHELL_DIR/Gen"
@@ -1089,5 +1089,193 @@ import NXModel
         stores.deviceStore.exportIPA = true
         model.target = BuildTarget.mac
         XCTAssertFalse(model.exportsShell)
+    }
+
+    @MainActor func testSaveIPARunsOffMainActorAndPacksLooseShadersWhenExceedingEntryLimit() throws {
+        final class ThreadRecordingRunner: ProcessRunner {
+            let base = SystemProcessRunner()
+            let lock = NSLock()
+            var streamOnMainThread: [Bool] = []
+            var commands: [[String]] = []
+
+            func capture(_ launch: ProcessLaunch) -> ProcessResult { base.capture(launch) }
+            func stream(_ launch: ProcessLaunch, line: @escaping (String) -> Void) -> Bool { base.stream(launch, line: line) }
+            func streamLines(_ launch: ProcessLaunch, started: @escaping (RunningProcess) -> Void, line: @escaping (String) -> Void) -> ProcessResult {
+                lock.lock()
+                streamOnMainThread.append(Thread.isMainThread)
+                commands.append([launch.executable] + launch.arguments)
+                lock.unlock()
+                return base.streamLines(launch, started: started, line: line)
+            }
+            func start(_ launch: ProcessLaunch, onOutput: @escaping (Data) -> Void, onExit: @escaping (Int32) -> Void) throws -> RunningProcess {
+                try base.start(launch, onOutput: onOutput, onExit: onExit)
+            }
+        }
+
+        let app = path("signed/DmShell.app")
+        let gameFw = "Frameworks/DmGame\(titleID).framework"
+        try write(app + "/DmShell", "signed-binary")
+        try write(app + "/Info.plist", "<plist/>")
+        try write(app + "/" + gameFw + "/DmGame\(titleID)", "game-binary")
+        try write(app + "/" + gameFw + "/msl/b-test/shader.json", "{\"s\":1}")
+        try Data([1, 2, 3, 4]).write(to: URL(fileURLWithPath: app + "/" + gameFw + "/msl/b-test/shader.metallib"))
+        try write(app + "/Frameworks/GraphicsSupport.framework/msl/keep.bin", "third-party")
+
+        let beforeStaging = Set(((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("nspb-ipa-") })
+
+        let runner = ThreadRecordingRunner()
+        let stores = LauncherStores(runner: runner, defaults: testDefaults)
+        let model = stores.build
+        model.installedAppPath = app
+
+        let ipa = URL(fileURLWithPath: path("out/Signed.ipa"))
+        let saved = expectation(description: "saveIPA finished")
+        model.saveIPA(to: ipa, entryLimit: 12) {
+            saved.fulfill()
+        }
+        XCTAssertTrue(model.running, "saveIPA dispatches heavy staging work asynchronously and returns at once")
+        wait(for: [saved], timeout: 30)
+
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.stages.first(where: { $0.id == 1005 })?.state, .done)
+        XCTAssertTrue(fm.fileExists(atPath: ipa.path))
+        XCTAssertFalse(runner.streamOnMainThread.isEmpty)
+        XCTAssertTrue(runner.streamOnMainThread.allSatisfy { !$0 }, "archive tools must run off the main thread: \(runner.streamOnMainThread)")
+        XCTAssertTrue(runner.commands.contains { $0.first == "/usr/bin/aa" }, "expected shader archive packing via aa")
+
+        let zipEntries = try entries(ofZip: ipa.path)
+        XCTAssertFalse(zipEntries.contains { $0.contains("\(gameFw)/msl/") }, zipEntries.joined(separator: "\n"))
+        XCTAssertEqual(zipEntries.filter { $0.hasPrefix("Payload/DmShell.app/\(gameFw)/msl-") && $0.hasSuffix(".aar") }.count, 1)
+        XCTAssertTrue(zipEntries.contains("Payload/DmShell.app/Frameworks/GraphicsSupport.framework/msl/keep.bin"))
+        XCTAssertTrue(fm.fileExists(atPath: app + "/" + gameFw + "/msl/b-test/shader.json"), "installed app keeps its original loose shaders")
+
+        let afterStaging = Set(((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("nspb-ipa-") })
+        XCTAssertTrue(afterStaging.subtracting(beforeStaging).isEmpty, "temporary IPA staging directories must be cleaned up")
+    }
+
+    @MainActor func testSaveIPARefusesArchiveAboveEntryLimitAndCleansTemporaryStaging() throws {
+        let app = path("oversized/DmShell.app")
+        try write(app + "/DmShell", "signed-binary")
+        for index in 0..<8 {
+            try write(app + "/Resources/f\(index).dat", "data-\(index)")
+        }
+
+        let beforeStaging = Set(((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("nspb-ipa-") })
+
+        let stores = LauncherStores(defaults: testDefaults)
+        let model = stores.build
+        model.installedAppPath = app
+
+        let ipa = URL(fileURLWithPath: path("out/Oversized.ipa"))
+        let finished = expectation(description: "saveIPA refused oversized bundle")
+        model.saveIPA(to: ipa, entryLimit: 5) {
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 30)
+
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.stages.first(where: { $0.id == 1005 })?.state, .failed)
+        XCTAssertFalse(fm.fileExists(atPath: ipa.path), "must never emit a corrupt ZIP32 IPA above the entry limit")
+        XCTAssertTrue(model.doneNote.contains("ZIP32"), model.doneNote)
+
+        let afterStaging = Set(((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("nspb-ipa-") })
+        XCTAssertTrue(afterStaging.subtracting(beforeStaging).isEmpty, "temporary IPA staging directory must be removed on failure")
+    }
+
+    func testOversizedMslShadersAreExternalizedWithoutPollutingArchiveAndMergedOnTransfer() throws {
+        let f = try makeFixture()
+        let app = URL(fileURLWithPath: ShellInstall.exportAppPath(root: f.root))
+        let fwName = "DmGame\(titleID).framework"
+        let appFw = app.appendingPathComponent("Frameworks/\(fwName)")
+        try write(app.appendingPathComponent("DmShell").path, "shell-bin")
+        try write(app.appendingPathComponent("Info.plist").path, "<plist/>")
+        try write(appFw.appendingPathComponent("DmGame\(titleID)").path, "game-bin")
+        try write(appFw.appendingPathComponent("game.manifest.json").path, #"{"loader":"FH"}"#)
+        let shaderBlob = Data(repeating: 0x5A, count: 256)
+        try fm.createDirectory(at: appFw.appendingPathComponent("msl/b-chain"), withIntermediateDirectories: true)
+        try shaderBlob.write(to: appFw.appendingPathComponent("msl/b-chain/shaders.img"))
+
+        let mirrorFw = URL(fileURLWithPath: ShellInstall.mirroredFramework(root: f.root, titleID: titleID))
+        try fm.createDirectory(at: mirrorFw.appendingPathComponent("msl/b-chain"), withIntermediateDirectories: true)
+        try shaderBlob.write(to: mirrorFw.appendingPathComponent("msl/b-chain/shaders.img"))
+
+        let library = ShellLibrary(games: [.init(titleID: titleID, name: "Big Shader Game", framework: mirrorFw.path)])
+        let outcome = installer(f).packExport(app: app, library: library, externalMSLThreshold: 64)
+        XCTAssertTrue(outcome.ok, outcome.message)
+
+        let zipEntries = try entries(ofZip: outcome.ipaPath)
+        XCTAssertFalse(zipEntries.contains { $0.contains("\(fwName)/msl/") }, zipEntries.joined(separator: "\n"))
+        XCTAssertTrue(zipEntries.contains("Payload/DmShell.app/Frameworks/\(fwName)/external-msl.json"), zipEntries.joined(separator: "\n"))
+        XCTAssertEqual(ShellExport.externalizedTitles(root: f.root), [titleID])
+        // Mirrored framework keeps its shaders intact in place.
+        XCTAssertEqual(try Data(contentsOf: mirrorFw.appendingPathComponent("msl/b-chain/shaders.img")), shaderBlob)
+
+        // Archive folder stays completely free of msl/, while transferSources merges msl/ only when requested.
+        let archive = path("games/\(titleID)")
+        try write(archive + "/romfs.img", "ROMFS")
+        let exportTransfer = ShellInstall.transferSources(archive: archive, shellRoot: f.root, titleID: titleID, includeExternalMSL: true)
+        XCTAssertEqual(exportTransfer.sizes["msl/b-chain/shaders.img"], Int64(shaderBlob.count))
+        XCTAssertEqual(exportTransfer.origins["msl/b-chain/shaders.img"], mirrorFw.appendingPathComponent("msl/b-chain/shaders.img").path)
+        XCTAssertFalse(fm.fileExists(atPath: archive + "/msl"))
+
+        let directInstallTransfer = ShellInstall.transferSources(archive: archive, shellRoot: f.root, titleID: titleID, includeExternalMSL: false)
+        XCTAssertNil(directInstallTransfer.sizes["msl/b-chain/shaders.img"])
+
+        let usbDest = path("usb/\(titleID)")
+        try DriveCopy.copy(archive: archive, files: exportTransfer.sizes, origins: exportTransfer.origins, to: usbDest, progress: { _, _ in })
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: usbDest + "/msl/b-chain/shaders.img")), shaderBlob)
+        XCTAssertEqual(try String(contentsOfFile: usbDest + "/romfs.img", encoding: .utf8), "ROMFS")
+    }
+
+    @MainActor func testSelectGamesBatchSendAndBatchDriveCopy() throws {
+        let idA = "0100000000010000", idB = "0100000000020000"
+        let archA = path("archA/\(idA)"), archB = path("archB/\(idB)")
+        try write(archA + "/romfs.img", "GAME-A")
+        try write(archB + "/romfs.img", "GAME-B-DATA")
+
+        let shellRoot = path("shell-batch")
+        testDefaults.set(shellRoot, forKey: "shellRoot")
+        let mirrorA = URL(fileURLWithPath: ShellInstall.mirroredFramework(root: shellRoot, titleID: idA))
+        try fm.createDirectory(at: mirrorA.appendingPathComponent("msl/b-1"), withIntermediateDirectories: true)
+        try Data("EXT-SHADER".utf8).write(to: mirrorA.appendingPathComponent("msl/b-1/s.img"))
+        ShellExport.saveExternalizedTitles([idA], root: shellRoot)
+
+        let stores = LauncherStores(defaults: testDefaults)
+        let model = stores.build
+        model.target = BuildTarget.ios
+        stores.deviceStore.exportIPA = true
+        stores.deviceStore.installDevice = "DEV-1"
+        stores.deviceStore.devices = [AppleDevice(id: "DEV-1", name: "iPhone", model: "iPhone", os: "27.0", reachable: true, transport: "wired")]
+        let driveRoot = path("usb-batch")
+        try fm.createDirectory(atPath: driveRoot, withIntermediateDirectories: true)
+        stores.deviceStore.driveFolder = driveRoot
+        model.exportedIPAPath = path("NX2Apple.ipa")
+        try write(model.exportedIPAPath, "ipa")
+        model.sharedAppDataSources = {
+            [
+                TransferSource(titleID: idA, name: "Alpha", archive: archA),
+                TransferSource(titleID: idB, name: "Beta", archive: archB),
+            ]
+        }
+
+        // Only checked game B goes into the device transfer queue when B alone is selected.
+        let mockTransfers = TransferQueueStore(file: nil, perform: { _, _, _ in })
+        model.transfers = mockTransfers
+        model.sendSelectedGameData(titleIDs: [idB])
+        XCTAssertEqual(mockTransfers.entries.map(\.titleID), [idB])
+
+        // Batch drive copy copies both A (including externalized msl/) and B sequentially.
+        XCTAssertEqual(model.transferSourceBytes(TransferSource(titleID: idA, name: "Alpha", archive: archA)), 16)
+        model.copySelectedToDrive(titleIDs: [idA, idB])
+        let copiedDone = expectation(description: "batch drive copy finished")
+        var cancellable: AnyCancellable?
+        cancellable = model.$send.sink { state in
+            if case .copied = state { copiedDone.fulfill() }
+        }
+        wait(for: [copiedDone], timeout: 10)
+        _ = cancellable
+        XCTAssertEqual(try String(contentsOfFile: driveRoot + "/\(idA)/romfs.img", encoding: .utf8), "GAME-A")
+        XCTAssertEqual(try String(contentsOfFile: driveRoot + "/\(idA)/msl/b-1/s.img", encoding: .utf8), "EXT-SHADER")
+        XCTAssertEqual(try String(contentsOfFile: driveRoot + "/\(idB)/romfs.img", encoding: .utf8), "GAME-B-DATA")
     }
 }

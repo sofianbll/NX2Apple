@@ -357,6 +357,7 @@ import XCTest
         store.take(picked: [try file("test.keys")], kind: .keys)
         store.outDir = temporary.path
         store.modPaths = ["/mods/A", "/mods/B"]
+        defaults.set(temporary.appendingPathComponent("shell").path, forKey: "shellRoot")
         let nxb = temporary.path + "/nxbuild/nxb"
         try FileManager.default.createDirectory(atPath: (nxb as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         try Data([0]).write(to: URL(fileURLWithPath: nxb))
@@ -375,6 +376,112 @@ import XCTest
         let args = store.lastBuildCommand
         XCTAssertEqual(Array(args.prefix(2)), [nxb, "build"])
         XCTAssertFalse(args.contains("--mods"), "this carry has no iOS code-mod embedding")
+    }
+
+    func testQueuedBuildsUseOnlyTheirOwnCodeMods() throws {
+        let runner = FakeProcessRunner()
+        runner.answer = { _ in ProcessResult(status: 0, out: "nxb 0.6.3\n") }
+        let store = BuildStore(localizer: localizer, runner: runner, repo: repo, deps: deps, engine: engine, devices: devices, defaults: defaults)
+        for path in [EngineLayout.marker] + RepoLayout.requiredTools {
+            let url = temporary.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try "'--work-dir'".write(to: url, atomically: true, encoding: .utf8)
+        }
+        repo.path = temporary.path
+        let titleID = "0100000000010000"
+        let secondID = "0100000000020000"
+        let keys = try file("test.keys")
+        let inputs = ["base": [try file("Game A [\(titleID)].nsp")], "keys": [keys]]
+        let secondInputs = ["base": [try file("Game B [\(secondID)].nsp")], "keys": [keys]]
+        store.target = BuildTarget.mac
+
+        store.modPaths = ["/mods/from-another-game"]
+        let withMods = QueueEntry(titleID: titleID, name: "Game A", target: BuildTarget.mac, inputs: inputs,
+                                  outputDirectory: temporary.path, modPaths: ["/mods/only-a"], engineID: "e")
+        // The fake runner deliberately refuses process starts. Only the generated command is under test.
+        _ = store.startQueued(withMods)
+        var args = store.lastBuildCommand
+        XCTAssertEqual(store.gameTitleID, titleID)
+        XCTAssertEqual(args.indices.filter { args[$0] == "--mods" }.map { args[$0 + 1] }, ["/mods/only-a"])
+        XCTAssertFalse(args.contains("/mods/from-another-game"))
+
+        store.modPaths = ["/mods/from-another-game"]
+        let withoutMods = QueueEntry(titleID: secondID, name: "Game B", target: BuildTarget.mac, inputs: secondInputs,
+                                     outputDirectory: temporary.path, engineID: "e")
+        _ = store.startQueued(withoutMods)
+        args = store.lastBuildCommand
+        XCTAssertEqual(store.gameTitleID, secondID)
+        XCTAssertEqual(args.first, deps.pythonPath)
+        XCTAssertFalse(args.contains("--mods"), "an entry without code mods clears the previous game's paths")
+    }
+
+    func testChangingTheBaseClearsCodeModsButKeepingItDoesNot() throws {
+        let store = makeStore()
+        let first = try file("Game A [0100000000010000].nsp")
+        let secondFolder = temporary.appendingPathComponent("B")
+        try FileManager.default.createDirectory(at: secondFolder, withIntermediateDirectories: true)
+        let second = try file("B/Game B [0100000000020000].nsp")
+        for change in 0..<4 {
+            store.take(picked: [first], kind: .base)
+            store.modPaths = ["/mods/only-a"]
+            store.take(picked: [first], kind: .base)
+            XCTAssertEqual(store.modPaths, ["/mods/only-a"], "keeping the base keeps this game's mods")
+            store.take(picked: [try file("keys-\(change).keys")], kind: .keys)
+            XCTAssertEqual(store.modPaths, ["/mods/only-a"], "changing keys keeps this game's mods")
+            switch change {
+            case 0: store.take(picked: [second], kind: .base)
+            case 1: store.take(dropped: [second])
+            case 2: store.clear("base")
+            default: store.scan(folder: secondFolder.path)
+            }
+            XCTAssertEqual(store.modPaths, [], "picking, dropping, clearing or scanning a new base clears the old game's mods")
+        }
+    }
+
+    func testFallbackIconArgumentsGoToMacScriptBuildsOnly() throws {
+        let runner = FakeProcessRunner()
+        runner.answer = { _ in ProcessResult(status: 0, out: "nxb 0.6.4\n") }
+        let store = BuildStore(localizer: localizer, runner: runner, repo: repo, deps: deps, engine: engine, devices: devices, defaults: defaults)
+        let iconPath = temporary.appendingPathComponent("fallback-icon.jpg").path
+        store.macFallbackIconArguments = { ["--fallback-icon", "\(iconPath)-\($0)"] }
+        let scriptURL = temporary.appendingPathComponent(RepoLayout.buildScript)
+        for path in [EngineLayout.marker] + RepoLayout.requiredTools {
+            let url = temporary.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try "'--work-dir'".write(to: url, atomically: true, encoding: .utf8)
+        }
+        repo.path = temporary.path
+        let key = "0100000000010000"
+        store.take(picked: [try file("Cartridge [\(key)].xci")], kind: .base)
+        store.take(picked: [try file("test.keys")], kind: .keys)
+        store.outDir = temporary.path
+        defaults.set(temporary.appendingPathComponent("shell").path, forKey: "shellRoot")
+        devices.exportIPA = true
+        let nxb = temporary.path + "/nxbuild/nxb"
+        try FileManager.default.createDirectory(atPath: (nxb as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try Data([0]).write(to: URL(fileURLWithPath: nxb))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nxb)
+        store.experimentalBuilderPath = nxb
+
+        store.target = BuildTarget.mac
+        store.experimentalBuilder = false
+        store.startBuild()
+        XCTAssertFalse(store.lastBuildCommand.contains("--fallback-icon"), "older scripts without --fallback-icon do not receive it")
+
+        try "'--work-dir' '--fallback-icon'".write(to: scriptURL, atomically: true, encoding: .utf8)
+        store.startBuild()
+        var args = store.lastBuildCommand
+        XCTAssertEqual(args.firstIndex(of: "--fallback-icon").map { args[$0 + 1] }, "\(iconPath)-\(key)")
+
+        store.experimentalBuilder = true
+        store.startBuild()
+        XCTAssertFalse(store.lastBuildCommand.contains("--fallback-icon"), "nxb build rejects unknown script options")
+
+        store.experimentalBuilder = false
+        store.target = BuildTarget.ios
+        store.startBuild()
+        args = store.lastBuildCommand
+        XCTAssertFalse(args.contains("--fallback-icon"), "the iOS app and shared shell never take the Mac stand-in icon")
     }
 
     func testRetryBuildsTheChosenTitleAndKeepsItsOutputsSeparate() throws {
@@ -503,6 +610,50 @@ import XCTest
         store.pollPSOArchive()
         XCTAssertEqual(store.stages[0].percent ?? 0, 66.0, accuracy: 0.1)
         XCTAssertTrue(store.stages[0].detail.contains("2 / 3 batches"))
+    }
+
+    func testNonJSONGameFrameworkStageLinesPollPSOArchiveProgressFromFrameworkLogAndStopAtStageEnd() throws {
+        // Aligns with build_ipa_from_nsp.py (--shell-framework): W=<work>/ipa writes ipa/build/ios/pso/work/bases.mtl4-json
+        // while pso_offline.py batch lines stream to <work>/logs/build_framework.log.
+        let psoWorkDir = temporary.appendingPathComponent("ipa/build/ios/pso/work")
+        let logsDir = temporary.appendingPathComponent("logs")
+        try FileManager.default.createDirectory(at: psoWorkDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+        try Data("{\"bases\":[]}\n".utf8).write(to: psoWorkDir.appendingPathComponent("bases.mtl4-json"))
+        let frameworkLog = logsDir.appendingPathComponent("build_framework.log")
+        try Data("pso_offline: arm64: batch 2/4: ready\n".utf8).write(to: frameworkLog)
+
+        let store = makeStore()
+        store.effectiveWorkDir = temporary.path
+
+        // Non-JSON stage start line from --shell-framework mode.
+        store.ingest("[12:00:01] [7/8] game framework …\n")
+        XCTAssertEqual(store.stages.count, 1)
+        XCTAssertEqual(store.stages[0].id, 7)
+        XCTAssertEqual(store.stages[0].state, .running)
+
+        store.pollPSOArchive()
+        XCTAssertEqual(store.stages[0].percent ?? 0, 50.0, accuracy: 0.1)
+        XCTAssertTrue(store.stages[0].detail.contains("2 / 4 batches"), store.stages[0].detail)
+
+        // Heartbeat running line without native percent must preserve polled PSO progress.
+        store.ingest("[12:00:05] [7/8] game framework …\n")
+        XCTAssertEqual(store.stages[0].percent ?? 0, 50.0, accuracy: 0.1)
+        XCTAssertTrue(store.stages[0].detail.contains("2 / 4 batches"), store.stages[0].detail)
+
+        // Merging line in build_framework.log updates detail and caps percent at 99%.
+        try Data("pso_offline: arm64: batch 2/4: ready\npso_offline: arm64: merging 4 batches\n".utf8).write(to: frameworkLog)
+        store.pollPSOArchive()
+        XCTAssertEqual(store.stages[0].percent ?? 0, 99.0, accuracy: 0.1)
+        XCTAssertTrue(store.stages[0].detail.contains("4 / 4 batches"), store.stages[0].detail)
+        XCTAssertTrue(store.stages[0].detail.contains(store.t("prog.note.merging")), store.stages[0].detail)
+
+        // Non-JSON stage completion line stops PSO polling and records final detail.
+        store.ingest("[12:00:10] ✓ [7/8] game framework (0:09): DmGame0100CD801CE5E000.framework\n")
+        XCTAssertEqual(store.stages[0].state, .done)
+        XCTAssertEqual(store.stages[0].detail, "DmGame0100CD801CE5E000.framework")
+        store.pollPSOArchive()
+        XCTAssertEqual(store.stages[0].detail, "DmGame0100CD801CE5E000.framework")
     }
 
     func testAChunkThatEndsInTheMiddleOfALineWaitsForTheRest() {

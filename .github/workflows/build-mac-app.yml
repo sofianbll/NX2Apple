@@ -31,7 +31,7 @@ name: Build the NX2Apple app (macOS)
 
 on:
   push:
-    branches: [main]
+    branches: [main, local/powera]
     tags: ['v*']
     # GitHub does not evaluate path filters for tag pushes: every v* tag builds. On main only a change to these paths builds.
     paths: ['frontend/**', 'tools/engine.py', 'tools/release_manifest.py', 'tools/requirements-release.txt', 'patches/**', '.upstream-ref', '.github/workflows/build-mac-app.yml']

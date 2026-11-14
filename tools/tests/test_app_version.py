@@ -1,8 +1,8 @@
 """`appVersion`: the one line that says which release the launcher is, and everything that reads it by path.
 
 The line is `static let appVersion = "x.y.z"` in frontend/Sources/NXModel/AppUpdateStore.swift (LNPANDY/NX2Apple#387). The release
-workflow, the engine sync workflow, tools/try-local and RELEASING.md read it there. When the line moves, a reader that still names the
-old file breaks the release build, so this test finds every reader and checks that it names a file that holds the line."""
+workflow, tools/try-local and RELEASING.md read it there. When the line moves, a reader that still names the old file breaks the release
+build, so this test finds every reader and checks that it names a file that holds the line."""
 import re
 import unittest
 from pathlib import Path
@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[2]
 LINE = re.compile(r'static let appVersion = "(\d+(?:\.\d+)+)"')
 READERS = [
     '.github/workflows/build-mac-app.yml',
-    '.github/workflows/sync-upstream.yml',
     'tools/try-local',
     'tools/tests/test_try_local.py',
     'RELEASING.md',
